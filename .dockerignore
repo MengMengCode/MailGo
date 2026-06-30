@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+frontend/dist
+backend/frontend-dist
+backend/.env
+.env
+.git
+.github
+*.md
+*.bat
+*.sh
+.dockerignore
+Dockerfile
+docker-compose.yml

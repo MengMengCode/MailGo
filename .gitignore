@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+frontend/dist/
+backend/frontend-dist/
+backend/mailgo
+backend/mailgo.exe
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Database (local data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# Claude Code session data
+.claude/
+
+# Windows build script
+build.bat

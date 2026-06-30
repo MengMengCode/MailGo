@@ -1,0 +1,850 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Geist Design System — Light & Dark themes
+   Source of truth: 前端设计规范.md
+   ========================================================================== */
+
+:root,
+[data-theme="light"] {
+  /* Brand & semantic */
+  --geist-primary: #171717;
+  --geist-secondary: #4d4d4d;
+  --geist-tertiary: #7d7d7d;
+  --geist-neutral: #f2f2f2;
+
+  /* Surfaces */
+  --geist-bg-100: #ffffff;
+  --geist-bg-200: #fafafa;
+
+  /* Border */
+  --geist-border: #e5e5e5;
+
+  /* Gray scale (1000 = primary text, 900 = secondary, 700 = disabled) */
+  --geist-gray-100: #f2f2f2;
+  --geist-gray-200: #ebebeb;
+  --geist-gray-300: #e6e6e6;
+  --geist-gray-400: #c9c9c9;
+  --geist-gray-500: #a8a8a8;
+  --geist-gray-600: #8f8f8f;
+  --geist-gray-700: #7d7d7d;
+  --geist-gray-800: #4d4d4d;
+  --geist-gray-900: #262626;
+
+  /* Accents */
+  --geist-blue-500: #006bff;
+  --geist-blue-100: #e9f4ff;
+  --geist-red-500: #ea001d;
+  --geist-red-100: #ffeeef;
+  --geist-amber-500: #ffae00;
+  --geist-amber-100: #fff6de;
+  --geist-green-500: #28a948;
+  --geist-green-100: #ecfdec;
+  --geist-purple-500: #a000f8;
+  --geist-purple-100: #faf0ff;
+
+  /* Component-level (sidebar, titlebar, statusbar) */
+  --mailgo-sidebar-bg: #fafafa;
+  --mailgo-sidebar-hover: rgba(0, 0, 0, 0.05);
+  --mailgo-sidebar-active: rgba(0, 0, 0, 0.08);
+  --mailgo-titlebar-bg: #fafafa;
+  --mailgo-statusbar-bg: #fafafa;
+
+  /* Focus ring */
+  --geist-focus: var(--mailgo-accent, #006bff);
+}
+
+[data-theme="dark"] {
+  --geist-primary: #ededed;
+  --geist-secondary: #a0a0a0;
+  --geist-tertiary: #a0a0a0;
+  --geist-neutral: #1a1a1a;
+
+  --geist-bg-100: #000000;
+  --geist-bg-200: #0a0a0a;
+
+  --geist-border: #2e2e2e;
+
+  --geist-gray-100: #1a1a1a;
+  --geist-gray-200: #1f1f1f;
+  --geist-gray-300: #292929;
+  --geist-gray-400: #454545;
+  --geist-gray-500: #6b6b6b;
+  --geist-gray-600: #8f8f8f;
+  --geist-gray-700: #a0a0a0;
+  --geist-gray-800: #c9c9c9;
+  --geist-gray-900: #ededed;
+
+  --geist-blue-500: #47a8ff;
+  --geist-blue-100: #002f62;
+  --geist-red-500: #ff565f;
+  --geist-red-100: #330a11;
+  --geist-amber-500: #ffae00;
+  --geist-amber-100: #2a1700;
+  --geist-green-500: #00ca50;
+  --geist-green-100: #002608;
+  --geist-purple-500: #c472fb;
+  --geist-purple-100: #290c33;
+
+  --mailgo-sidebar-bg: #0a0a0a;
+  --mailgo-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --mailgo-sidebar-active: rgba(255, 255, 255, 0.1);
+  --mailgo-titlebar-bg: #0a0a0a;
+  --mailgo-statusbar-bg: #0a0a0a;
+
+  --geist-focus: var(--mailgo-accent, #47a8ff);
+}
+
+/* Appearance customization defaults — overridden at runtime by appearanceStore */
+:root {
+  --mailgo-accent: #006bff;
+  --mailgo-accent-rgb: 0, 107, 255;
+  --mailgo-accent-light: #e9f4ff;
+  --mailgo-accent-focus: rgba(0, 107, 255, 0.25);
+  --geist-radius: 6px;
+  --geist-radius-sm: 4px;
+  --mailgo-font-size: 14px;
+  --mailgo-transition: 150ms;
+  --mailgo-sidebar-backdrop: none;
+  --mailgo-content-backdrop: none;
+  --mailgo-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --mailgo-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --mailgo-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Accent color integration — keep focus ring on user's accent */
+:root {
+  --geist-focus: var(--mailgo-accent);
+}
+
+/* Custom text color — only affects text, not accent/component colors */
+:root {
+  --mailgo-text-primary: var(--geist-primary);
+  --mailgo-text-secondary: var(--geist-secondary);
+  --mailgo-text-tertiary: var(--geist-tertiary);
+}
+body {
+  color: var(--mailgo-text-primary);
+}
+.text-secondary,
+[style*="color: var(--geist-secondary)"] {
+  color: var(--mailgo-text-secondary) !important;
+}
+.text-disabled,
+[style*="color: var(--geist-tertiary)"] {
+  color: var(--mailgo-text-tertiary) !important;
+}
+
+/* Sidebar glassmorphism */
+aside[aria-label] {
+  backdrop-filter: var(--mailgo-sidebar-backdrop);
+  -webkit-backdrop-filter: var(--mailgo-sidebar-backdrop);
+}
+
+/* Content area glassmorphism */
+main {
+  backdrop-filter: var(--mailgo-content-backdrop);
+  -webkit-backdrop-filter: var(--mailgo-content-backdrop);
+}
+
+/* Shadow intensity presets */
+[data-shadow="none"] .card,
+[data-shadow="none"] .card-padded {
+  box-shadow: none;
+}
+[data-shadow="sm"] .card,
+[data-shadow="sm"] .card-padded {
+  box-shadow: var(--mailgo-shadow-sm);
+}
+[data-shadow="md"] .card,
+[data-shadow="md"] .card-padded {
+  box-shadow: var(--mailgo-shadow-md);
+}
+[data-shadow="lg"] .card,
+[data-shadow="lg"] .card-padded {
+  box-shadow: var(--mailgo-shadow-lg);
+}
+
+/* Compact mode — tighter spacing */
+[data-compact="true"] .btn-base {
+  height: 32px;
+}
+[data-compact="true"] .btn-small {
+  height: 28px;
+  padding: 0 4px;
+  font-size: 12px;
+}
+[data-compact="true"] .input {
+  height: 34px;
+  padding: 0 10px;
+}
+[data-compact="true"] .card-padded {
+  padding: 12px;
+}
+
+/* ==========================================================================
+   Base resets
+   ========================================================================== */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family:
+      "Geist Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, sans-serif;
+    font-size: var(--mailgo-font-size, 14px);
+    line-height: 20px;
+    color: var(--geist-primary);
+    background-color: var(--geist-bg-100);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--geist-primary) 18%, transparent);
+    color: var(--geist-primary);
+  }
+
+  /* Range slider thumb — matches theme (black in light, white in dark) */
+  input[type="range"].appearance-none::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--geist-primary);
+    border: 2px solid var(--geist-bg-100);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    margin-top: -1px;
+  }
+  input[type="range"].appearance-none::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--geist-primary);
+    border: 2px solid var(--geist-bg-100);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+  }
+
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    min-height: 40px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+    background-color: rgba(128, 128, 128, 0.28);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(128, 128, 128, 0.45);
+  }
+
+  /* Geist focus ring: 2px gap in surface + 2px blue ring.
+     We deliberately do NOT apply this to every element (the previous
+     `*:focus-visible` rule painted a blue box-shadow on checkboxes,
+     buttons, links, and inputs alike, producing a nested blue ring on
+     inputs that already have their own border + focus ring). Instead
+     we only suppress the browser's native outline globally and let
+     each component define its own focus style (see .input below). */
+  *:focus-visible {
+    outline: none;
+  }
+  /* Fallback focus ring for native inputs/textareas/selects that don't
+     use the .input class — a subtle tertiary ring instead of the
+     browser default blue outline. */
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    border-color: var(--geist-tertiary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--geist-tertiary) 18%, transparent);
+    border-radius: 6px;
+    transition-duration: var(--mailgo-transition);
+  }
+
+  /* Honor reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Mobile touch targets — ensure interactive elements are ≥ 44px. */
+@media (max-width: 639px) {
+  button,
+  [role="button"],
+  a,
+  input[type="checkbox"],
+  input[type="radio"],
+  select {
+    min-height: 40px;
+  }
+  /* Larger tap targets for list items */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Prevent iOS zoom on input focus */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  /* Smooth momentum scrolling in drawers/overlays */
+  .scroll-region {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ==========================================================================
+   Components
+   ========================================================================== */
+
+@layer components {
+  /* ---- Typography ---- */
+  .text-heading-72 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 72px;
+    font-weight: 600;
+    line-height: 72px;
+    letter-spacing: -4.32px;
+  }
+  .text-heading-48 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 48px;
+    font-weight: 600;
+    line-height: 56px;
+    letter-spacing: -2.88px;
+  }
+  .text-heading-32 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 40px;
+    letter-spacing: -1.28px;
+  }
+  .text-heading-24 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 32px;
+    letter-spacing: -0.96px;
+  }
+  .text-heading-20 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 26px;
+    letter-spacing: -0.4px;
+  }
+  .text-heading-16 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 24px;
+    letter-spacing: -0.32px;
+  }
+  .text-heading-14 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    letter-spacing: -0.28px;
+  }
+
+  .text-button-16 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  .text-button-14 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  .text-button-12 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+  }
+
+  .text-label-20 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 32px;
+  }
+  .text-label-18 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+  .text-label-16 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+  .text-label-14 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+  .text-label-13 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 16px;
+  }
+  .text-label-12 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+  }
+  .text-mono-13 {
+    font-family: "Geist Mono", monospace;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+  .text-mono-14 {
+    font-family: "Geist Mono", monospace;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+
+  .text-copy-18 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 28px;
+  }
+  .text-copy-16 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
+  }
+  .text-copy-14 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+  .text-copy-13 {
+    font-family: "Geist Sans", sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+
+  /* ---- Buttons ---- */
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-geist font-medium transition-colors;
+    @apply text-button-14;
+    @apply select-none;
+  }
+  .btn-base:disabled {
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn-base;
+    height: 40px;
+    padding: 0 10px;
+    background-color: var(--geist-primary);
+    color: var(--geist-bg-100);
+  }
+  .btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+  .btn-primary:disabled {
+    background-color: var(--geist-gray-100);
+    color: var(--geist-gray-500);
+  }
+
+  .btn-secondary {
+    @apply btn-base;
+    height: 40px;
+    padding: 0 10px;
+    background-color: var(--geist-bg-100);
+    color: var(--geist-primary);
+    border: 1px solid var(--geist-border);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--geist-bg-200);
+  }
+  .btn-secondary:disabled {
+    color: var(--geist-gray-500);
+  }
+
+  .btn-tertiary {
+    @apply btn-base;
+    height: 40px;
+    padding: 0 10px;
+    background-color: transparent;
+    color: var(--geist-primary);
+  }
+  .btn-tertiary:hover:not(:disabled) {
+    background-color: var(--mailgo-sidebar-hover);
+  }
+  .btn-tertiary:disabled {
+    color: var(--geist-gray-500);
+  }
+
+  .btn-error {
+    @apply btn-base;
+    height: 40px;
+    padding: 0 10px;
+    background-color: var(--geist-red-500);
+    color: #ffffff;
+  }
+  .btn-error:hover:not(:disabled) {
+    background-color: #d8001b;
+  }
+  .btn-error:disabled {
+    opacity: 0.6;
+  }
+
+  .btn-small {
+    height: 32px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+  .btn-large {
+    height: 48px;
+    padding: 0 14px;
+    font-size: 16px;
+  }
+
+  /* ---- Input ---- */
+  .input {
+    @apply w-full rounded-geist text-label-14;
+    height: 40px;
+    padding: 0 12px;
+    background-color: var(--geist-bg-100);
+    color: var(--geist-primary);
+    border: 1px solid var(--geist-border);
+    transition: border-color var(--mailgo-transition) ease, box-shadow var(--mailgo-transition) ease;
+  }
+  .input::placeholder {
+    color: var(--geist-gray-500);
+  }
+  .input:hover:not(:disabled) {
+    border-color: var(--geist-gray-400);
+  }
+  .input:focus-visible {
+    border-color: var(--geist-tertiary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--geist-tertiary) 18%, transparent);
+  }
+  .input:disabled {
+    background-color: var(--geist-gray-100);
+    color: var(--geist-gray-500);
+    cursor: not-allowed;
+  }
+  .input-small {
+    @apply input;
+    height: 32px;
+  }
+  .input-large {
+    @apply input;
+    height: 48px;
+    font-size: 16px;
+  }
+
+  /* ---- Card ---- */
+  .card {
+    @apply rounded-geist bg-geist-bg-100;
+    box-shadow: var(--mailgo-shadow-md);
+    border: 1px solid var(--geist-border);
+  }
+  .card-padded {
+    @apply card p-6;
+  }
+
+  /* ---- Tag ---- */
+  .tag {
+    @apply inline-flex items-center px-2 h-[20px] rounded-full text-label-12 font-medium;
+  }
+  .tag-blue {
+    background-color: var(--geist-blue-100);
+    color: var(--geist-blue-500);
+  }
+  .tag-red {
+    background-color: var(--geist-red-100);
+    color: var(--geist-red-500);
+  }
+  .tag-amber {
+    background-color: var(--geist-amber-100);
+    color: var(--geist-amber-500);
+  }
+  .tag-green {
+    background-color: var(--geist-green-100);
+    color: var(--geist-green-500);
+  }
+  .tag-purple {
+    background-color: var(--geist-purple-100);
+    color: var(--geist-purple-500);
+  }
+
+  /* ---- Skeleton ---- */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--geist-gray-100) 25%,
+      var(--geist-gray-200) 50%,
+      var(--geist-gray-100) 75%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 4px;
+  }
+
+  .spinner {
+    animation: spin 0.8s linear infinite;
+    color: var(--geist-secondary);
+  }
+}
+
+/* Keyframes must live at the top level (outside @layer) so they apply
+   regardless of layer ordering. These were previously missing, which
+   caused every .spinner and .skeleton animation to silently no-op —
+   loading spinners appeared frozen. */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -800px 0; }
+  100% { background-position: 800px 0; }
+}
+
+@layer utilities {
+  .scroll-region {
+    scrollbar-gutter: stable;
+  }
+  .text-secondary {
+    color: var(--geist-secondary);
+  }
+  .text-tertiary {
+    color: var(--geist-tertiary);
+  }
+  .text-disabled {
+    color: var(--geist-gray-500);
+  }
+  .border-default {
+    border-color: var(--geist-border);
+  }
+  .divider {
+    height: 1px;
+    background-color: var(--geist-border);
+  }
+}
+
+/* Apply --mailgo-transition to elements using Tailwind transition utilities.
+   This lets the "Animation Speed" appearance setting take visible effect. */
+[class*="transition-colors"] {
+  transition-duration: var(--mailgo-transition) !important;
+}
+[class*="transition-all"] {
+  transition-duration: var(--mailgo-transition) !important;
+}
+[class*="transition-opacity"] {
+  transition-duration: var(--mailgo-transition) !important;
+}
+[class*="transition-shadow"] {
+  transition-duration: var(--mailgo-transition) !important;
+}
+
+/* ==========================================================================
+   AI chat markdown rendering
+   ========================================================================== */
+.ai-markdown h1 { font-size: 1.3em; font-weight: 700; margin: 0.8em 0 0.4em; line-height: 1.3; }
+.ai-markdown h2 { font-size: 1.15em; font-weight: 600; margin: 0.7em 0 0.35em; line-height: 1.35; }
+.ai-markdown h3 { font-size: 1em; font-weight: 600; margin: 0.6em 0 0.25em; line-height: 1.4; }
+.ai-markdown p { margin: 0.45em 0; line-height: 1.7; }
+.ai-markdown ul { list-style: disc; padding-left: 1.5em; margin: 0.45em 0; }
+.ai-markdown ol { list-style: decimal; padding-left: 1.5em; margin: 0.45em 0; }
+.ai-markdown li { margin: 0.25em 0; line-height: 1.6; }
+.ai-markdown blockquote {
+  border-left: 3px solid var(--geist-border);
+  padding-left: 0.9em;
+  margin: 0.6em 0;
+  color: var(--geist-secondary);
+  font-style: italic;
+}
+.ai-markdown code {
+  background: var(--geist-gray-100);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+.ai-markdown pre {
+  background: var(--geist-gray-100);
+  padding: 0.75em 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.6em 0;
+  border: 1px solid var(--geist-border);
+}
+.ai-markdown pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.88em;
+}
+.ai-markdown a {
+  color: var(--geist-blue-500);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ai-markdown a:hover {
+  text-decoration-thickness: 2px;
+}
+.ai-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.65em 0;
+  font-size: 0.92em;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--geist-border);
+}
+.ai-markdown th,
+.ai-markdown td {
+  border: 1px solid var(--geist-border);
+  padding: 0.5em 0.7em;
+  vertical-align: top;
+}
+.ai-markdown th {
+  background: var(--geist-bg-200);
+  font-weight: 600;
+}
+.ai-markdown td p,
+.ai-markdown th p {
+  margin: 0;
+}
+.ai-markdown strong {
+  font-weight: 650;
+}
+.ai-markdown em {
+  font-style: italic;
+}
+.mail-body-surface {
+  background: var(--geist-bg-100, #ffffff) !important;
+  color: var(--geist-primary, #111827) !important;
+  color-scheme: light;
+  backdrop-filter: var(--mailgo-content-backdrop);
+  -webkit-backdrop-filter: var(--mailgo-content-backdrop);
+}
+.mail-body-surface .prose,
+.mail-body-surface pre,
+.mail-body-surface p,
+.mail-body-surface div,
+.mail-body-surface span,
+.mail-body-surface td,
+.mail-body-surface th,
+.mail-body-surface li {
+  color: inherit;
+  background-color: transparent !important;
+}
+.mail-body-surface a {
+  color: var(--geist-blue-500, #0969da);
+}
+.mail-body-surface table {
+  color: var(--geist-primary, #111827);
+}
+.mail-body-surface th {
+  background: var(--geist-bg-200, #f8fafc);
+}
+.mail-body-surface pre {
+  background: var(--geist-bg-100, #ffffff);
+}
+.mail-body-surface blockquote {
+  color: var(--geist-secondary, #374151);
+}
+
+/* Dark mode: container stays black (for empty space), the invert
+   filter lives on .mail-body-invert (an inner wrapper) so it does NOT
+   affect the container's own background. */
+[data-theme="dark"] .mail-body-surface {
+  background: #000000 !important;
+  color: #e5e5e5 !important;
+  color-scheme: dark;
+}
+[data-theme="dark"] .mail-body-invert {
+  background: #ffffff !important;
+  color: #111827 !important;
+  filter: invert(1) hue-rotate(180deg);
+}
+[data-theme="dark"] .mail-body-invert img,
+[data-theme="dark"] .mail-body-invert video,
+[data-theme="dark"] .mail-body-invert svg,
+[data-theme="dark"] .mail-body-invert [data-attachment-preview] {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Inline images (content-id) also need re-inversion. */
+[data-theme="dark"] .mail-body-invert .inline-image {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Fix table header and code blocks that have explicit light backgrounds. */
+[data-theme="dark"] .mail-body-invert th {
+  background: transparent !important;
+}
+[data-theme="dark"] .mail-body-invert pre {
+  background: transparent !important;
+}
+.ai-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--geist-primary);
+  animation: ai-blink 0.8s ease-in-out infinite;
+  border-radius: 1px;
+}
+@keyframes ai-blink {
+  0%, 40% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}

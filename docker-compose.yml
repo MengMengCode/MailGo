@@ -1,0 +1,47 @@
+services:
+  mailgo:
+    build: .
+    container_name: mailgo
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    env_file: .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    container_name: mailgo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret}
+      MYSQL_DATABASE: mailgo
+      MYSQL_USER: mailgo
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mailgo_secret}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_secret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: mailgo-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:
+  redis-data:
