@@ -1,6 +1,8 @@
+# Development: build from source
+# Usage: docker compose -f docker-compose.dev.yml up --build
 services:
   mailgo:
-    image: ghcr.io/mengmengcode/mailgo:main
+    build: .
     container_name: mailgo
     restart: unless-stopped
     ports:

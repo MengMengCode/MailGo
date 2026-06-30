@@ -2,9 +2,13 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────
-#  MailGo Install Script
-#  Generates .env, starts Docker containers, prints initial password.
+#  MailGo One-Line Installer
+#  Usage: curl -fsSL https://raw.githubusercontent.com/MengMengCode/MailGo/main/install.sh | bash
 # ─────────────────────────────────────────────────────────────────
+
+REPO="MengMengCode/MailGo"
+BASE_URL="https://raw.githubusercontent.com/${REPO}/main"
+INSTALL_DIR="${MAILGO_DIR:-$HOME/mailgo}"
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -28,10 +32,24 @@ else
   die "Docker Compose is not installed. https://docs.docker.com/compose/install/"
 fi
 
+# ── Create install directory ─────────────────────────────────────
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+info "Installing to $INSTALL_DIR ..."
+
+# ── Download docker-compose.yml ──────────────────────────────────
+info "Downloading docker-compose.yml ..."
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "${BASE_URL}/docker-compose.yml" -o docker-compose.yml
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO docker-compose.yml "${BASE_URL}/docker-compose.yml"
+else
+  die "Neither curl nor wget is available."
+fi
+
 # ── Generate .env ────────────────────────────────────────────────
 if [ -f .env ]; then
-  warn ".env already exists — skipping generation."
-  warn "Delete it first if you want to regenerate."
+  warn ".env already exists — keeping existing config."
 else
   info "Generating .env ..."
 
@@ -61,14 +79,16 @@ EOF
   ok ".env created."
 fi
 
-# ── Start containers ─────────────────────────────────────────────
-info "Starting MailGo ..."
-$COMPOSE up -d --build
+# ── Pull images and start ────────────────────────────────────────
+info "Pulling images and starting MailGo ..."
+$COMPOSE pull
+$COMPOSE up -d
 
 # ── Wait for services ────────────────────────────────────────────
 info "Waiting for services to be ready ..."
 for i in $(seq 1 90); do
-  if docker inspect --format='{{.State.Health.Status}}' mailgo 2>/dev/null | grep -q "healthy\|running"; then
+  STATUS=$(docker inspect --format='{{.State.Status}}' mailgo 2>/dev/null || echo "starting")
+  if [ "$STATUS" = "running" ]; then
     break
   fi
   sleep 2
@@ -90,8 +110,13 @@ fi
 echo "║                                                                  ║"
 printf "║  Open:  http://localhost:%-40s  ║\n" "${SERVER_PORT:-8080}"
 echo "║                                                                  ║"
+echo "║  Install dir:  ${INSTALL_DIR}                                    "
+echo "║                                                                  ║"
 echo "║  Reset password:  docker exec mailgo /app/mailgo -reset-password ║"
 echo "║  Change password: Settings > Security > Change Password          ║"
+echo "║  View logs:       docker logs -f mailgo                          ║"
+echo "║  Stop:            cd ${INSTALL_DIR} && docker compose down        "
+echo "║  Update:          cd ${INSTALL_DIR} && docker compose pull && docker compose up -d"
 echo "║                                                                  ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
 echo ""

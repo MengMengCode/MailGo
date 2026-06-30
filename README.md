@@ -34,12 +34,16 @@ A modern, self-hosted email client with a clean web interface. Connect your IMAP
 ### Docker (Recommended / 推荐)
 
 ```bash
-git clone https://github.com/MengMengCode/MailGo.git && cd MailGo && bash install.sh
+curl -fsSL https://raw.githubusercontent.com/MengMengCode/MailGo/main/install.sh | bash
 ```
 
-The script generates `.env` with random secrets, builds and starts all containers (app + MySQL + Redis), and prints the initial login password.
+The script downloads `docker-compose.yml`, generates `.env` with random secrets, pulls the pre-built image from GHCR, starts all containers (app + MySQL + Redis), and prints the initial login password.
 
-脚本会自动生成 `.env`（含随机密钥），构建并启动所有容器（应用 + MySQL + Redis），并打印初始登录密码。
+脚本自动下载 `docker-compose.yml`，生成含随机密钥的 `.env`，从 GHCR 拉取预构建镜像，启动所有容器（应用 + MySQL + Redis），并打印初始登录密码。
+
+Default install directory: `~/mailgo`. Override with `MAILGO_DIR=/path/to/dir`.
+
+默认安装目录：`~/mailgo`。可通过 `MAILGO_DIR=/path/to/dir` 自定义。
 
 ### Manual / 手动部署
 
@@ -122,9 +126,9 @@ docker exec mailgo /app/mailgo -reset-password
 
 ## Docker Compose
 
-The default setup includes MySQL and Redis connected via an internal Docker network. Database ports are not exposed to the host.
+The default `docker-compose.yml` pulls the pre-built image from GHCR. MySQL and Redis are connected via an internal Docker network (no host port exposure).
 
-默认配置包含通过 Docker 内部网络连接的 MySQL 和 Redis，数据库端口不暴露到宿主机。
+默认 `docker-compose.yml` 从 GHCR 拉取预构建镜像。MySQL 和 Redis 通过 Docker 内部网络连接（不暴露端口到宿主机）。
 
 ```bash
 # Start / 启动
@@ -136,13 +140,17 @@ docker compose down
 # Logs / 查看日志
 docker compose logs -f mailgo
 
-# Rebuild / 重新构建
-docker compose up -d --build
+# Update / 更新
+docker compose pull && docker compose up -d
 ```
 
-To use external MySQL/Redis, edit `.env` to point to your servers and remove the `mysql`/`redis` services from `docker-compose.yml`.
+To build from source (for development), use `docker-compose.dev.yml`:
 
-如需使用外部 MySQL/Redis，修改 `.env` 中的连接地址并从 `docker-compose.yml` 中移除 `mysql`/`redis` 服务。
+如需从源码构建（开发用途），使用 `docker-compose.dev.yml`：
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build
+```
 
 ## Technology Stack / 技术栈
 
