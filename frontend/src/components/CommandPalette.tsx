@@ -157,7 +157,7 @@ export function CommandPalette() {
         <div className="max-h-[360px] overflow-y-auto p-2">
           {filtered.length === 0 ? (
             <p className="text-label-13 text-secondary text-center py-6">
-              No commands found
+              {t("commandPalette.noCommands")}
             </p>
           ) : (
             filtered.map((cmd, i) => (

@@ -461,7 +461,7 @@ export function AddAccountWizard({
       footer={
         <div className="flex items-center justify-between w-full">
           <div className="text-label-12 text-secondary">
-            {t("common.step", "Step")} {stepIndex + 1} / {STEP_ORDER.length}
+            {t("common.step")} {stepIndex + 1} / {STEP_ORDER.length}
           </div>
           <div className="flex items-center gap-2">
             {step !== "email" && (
@@ -522,7 +522,7 @@ export function AddAccountWizard({
                 >
                   {verifying
                     ? t("settings.wizard.verifying")
-                    : t("common.verify", "Verify")}
+                    : t("common.verify")}
                 </Button>
               )
             )}
@@ -530,7 +530,7 @@ export function AddAccountWizard({
               <Button size="small" loading={create.isPending} onClick={createAccount}>
                 {create.isPending
                   ? t("settings.wizard.creating")
-                  : t("common.finish", "Finish")}
+                  : t("common.finish")}
               </Button>
             )}
             <Button variant="secondary" size="small" onClick={close}>
@@ -660,7 +660,7 @@ export function AddAccountWizard({
                 {detectResult.mx_records.length ? detectResult.mx_records.join(", ") : "-"}
               </div>
               <div className="mt-1">
-                <span className="font-medium">Default:</span>{" "}
+                <span className="font-medium">{t("settings.detectedDefault")}:</span>{" "}
                 {state.imapHost}:{state.imapPort} / {state.smtpHost}:{state.smtpPort}
               </div>
             </div>

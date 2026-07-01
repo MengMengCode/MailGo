@@ -187,6 +187,7 @@ func main() {
 	// Settings
 	api.HandleFunc("/settings", handlers.ListSettings).Methods("GET")
 	api.HandleFunc("/settings/{key}", handlers.UpdateSetting).Methods("PUT")
+	api.HandleFunc("/updates/latest", handlers.LatestRelease).Methods("GET")
 
 	// Storage
 	api.HandleFunc("/storage/stats", handlers.StorageStatsHandler).Methods("GET")

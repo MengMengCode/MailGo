@@ -50,6 +50,17 @@ export const authApi = {
     }),
 };
 
+export interface LatestRelease {
+  version: string;
+  tag_name: string;
+  url: string;
+  published_at: string;
+}
+
+export const updatesApi = {
+  latest: () => request<LatestRelease>("/updates/latest"),
+};
+
 /* ==========================================================================
    Accounts
    ========================================================================== */

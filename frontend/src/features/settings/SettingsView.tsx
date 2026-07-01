@@ -41,7 +41,7 @@ import {
   useUpdateAccount,
 } from "@/hooks/mutations/useAccountMutations";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { settingsApi, storageApi, pgpKeysApi, syncApi, authApi, type Account, type AppearanceSettings as AppearanceSettingsType } from "@/lib/api";
+import { settingsApi, storageApi, pgpKeysApi, syncApi, authApi, updatesApi, type Account, type AppearanceSettings as AppearanceSettingsType } from "@/lib/api";
 import { useAppStore, type ThemeMode } from "@/stores/appStore";
 import { useAppearanceStore, markAppearanceEditing } from "@/stores/appearanceStore";
 import { showToast } from "@/stores/toast.store";
@@ -1605,7 +1605,7 @@ function AppearanceSettings() {
           </div>
           {appearance.bg_image && (
             <div className="w-full max-w-[280px] rounded-geist overflow-hidden border" style={{ borderColor: "var(--geist-border)" }}>
-              <img src={appearance.bg_image} alt="Desktop background preview" className="w-full h-28 object-cover" />
+              <img src={appearance.bg_image} alt={t("settings.desktopBackgroundPreview")} className="w-full h-28 object-cover" />
             </div>
           )}
         </div>
@@ -1637,7 +1637,7 @@ function AppearanceSettings() {
           </div>
           {appearance.bg_image_mobile && (
             <div className="w-full max-w-[160px] rounded-geist overflow-hidden border" style={{ borderColor: "var(--geist-border)" }}>
-              <img src={appearance.bg_image_mobile} alt="Mobile background preview" className="w-full h-36 object-cover" />
+              <img src={appearance.bg_image_mobile} alt={t("settings.mobileBackgroundPreview")} className="w-full h-36 object-cover" />
             </div>
           )}
         </div>
@@ -2410,6 +2410,63 @@ function AddPGPKeyModal({
 /* ============================== About ============================== */
 function AboutSettings() {
   const { t } = useTranslation();
+  const latestRelease = useQuery({
+    queryKey: ["updates", "latest"],
+    queryFn: updatesApi.latest,
+    staleTime: 15 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+  const updateAvailable =
+    latestRelease.data &&
+    compareVersions(latestRelease.data.version, APP_VERSION) > 0;
+
+  const versionValue = (
+    <div className="flex flex-col items-end gap-1">
+      <span>{APP_VERSION}</span>
+      {latestRelease.isPending ? (
+        <span className="inline-flex items-center gap-1 text-label-12 text-secondary font-normal">
+          <RefreshCw size={12} className="spinner" />
+          {t("settings.checkingUpdates")}
+        </span>
+      ) : latestRelease.isError ? (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-label-12 font-normal hover:underline"
+          style={{ color: "var(--geist-red-500)" }}
+          onClick={() => void latestRelease.refetch()}
+          title={t("settings.checkAgain")}
+        >
+          <RefreshCw size={12} />
+          {t("settings.updateCheckFailed")}
+        </button>
+      ) : updateAvailable ? (
+        <a
+          href={latestRelease.data.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-label-12 font-normal hover:underline"
+          style={{ color: "var(--geist-blue-600, #006bff)" }}
+        >
+          <Download size={12} />
+          {t("settings.updateAvailable", {
+            version: latestRelease.data.version,
+          })}
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-label-12 text-secondary font-normal hover:underline"
+          onClick={() => void latestRelease.refetch()}
+          title={t("settings.checkAgain")}
+        >
+          <Check size={12} style={{ color: "var(--geist-green-500)" }} />
+          {t("settings.upToDate")}
+        </button>
+      )}
+    </div>
+  );
+
   const rows: { label: string; value: ReactNode }[] = [
     { label: t("settings.application"), value: "MailGo" },
     {
@@ -2427,7 +2484,7 @@ function AboutSettings() {
         </a>
       ),
     },
-    { label: t("settings.version"), value: APP_VERSION },
+    { label: t("settings.version"), value: versionValue },
     { label: t("settings.backend"), value: "Go + MySQL + Redis" },
     { label: t("settings.frontend"), value: "React 19 + TypeScript + TailwindCSS" },
     { label: t("settings.license"), value: "Apache-2.0" },
@@ -2445,4 +2502,22 @@ function AboutSettings() {
       </div>
     </div>
   );
+}
+
+function compareVersions(left: string, right: string): number {
+  const parse = (value: string) =>
+    value
+      .trim()
+      .replace(/^v/i, "")
+      .split("-", 1)[0]
+      .split(".")
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  const length = Math.max(a.length, b.length);
+  for (let i = 0; i < length; i += 1) {
+    const difference = (a[i] || 0) - (b[i] || 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }

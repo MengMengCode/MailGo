@@ -6,6 +6,7 @@ import (
 	"log"
 	"mailgo/internal/microsoftauth"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,7 +40,7 @@ type ServerMailbox struct {
 // the ready-to-use client. The caller is responsible for calling Logout()
 // and Close() when done.
 func Connect(cfg AccountConfig) (*client.Client, error) {
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	enc := cfg.Encryption
 	if enc == "" {
 		if cfg.TLS || cfg.Port == 993 {

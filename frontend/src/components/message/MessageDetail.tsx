@@ -767,7 +767,7 @@ export function MessageDetail({ messageId, onBack, showThread = false }: Message
                   className="flex flex-wrap items-center gap-1"
                   style={toExpanded ? { maxHeight: 120, overflowY: "auto" } : undefined}
                 >
-                  <span className="text-disabled shrink-0">to </span>
+                  <span className="text-disabled shrink-0">{t("messageDetail.to")} </span>
                   {(toExpanded ? toList : toList.slice(0, 8)).map((a, i) => (
                     <span
                       key={i}
@@ -801,7 +801,7 @@ export function MessageDetail({ messageId, onBack, showThread = false }: Message
                   className="flex flex-wrap items-center gap-1"
                   style={ccExpanded ? { maxHeight: 120, overflowY: "auto" } : undefined}
                 >
-                  <span className="text-disabled shrink-0">cc </span>
+                  <span className="text-disabled shrink-0">{t("messageDetail.cc")} </span>
                   {(ccExpanded ? ccList : ccList.slice(0, 8)).map((a, i) => (
                     <span
                       key={i}
@@ -1402,10 +1402,12 @@ function ThreadMessageCard({
           </div>
           <div className="text-label-12 text-secondary truncate">
             {toList.length > 0
-              ? `to ${toList.map((a) => {
-                  const name = a.name?.trim();
-                  return name && name !== a.address ? `${name} (${a.address})` : (name || a.address);
-                }).join(", ")}`
+              ? t("messageDetail.toRecipient", {
+                  value: toList.map((a) => {
+                    const name = a.name?.trim();
+                    return name && name !== a.address ? `${name} (${a.address})` : (name || a.address);
+                  }).join(", "),
+                })
               : message.from_address}
           </div>
         </div>
@@ -1419,7 +1421,7 @@ function ThreadMessageCard({
         <div className="px-4 pb-4">
           {ccList.length > 0 && (
             <p className="text-label-12 text-secondary mb-3">
-              <span className="text-disabled">cc </span>
+              <span className="text-disabled">{t("messageDetail.cc")} </span>
               {ccList.map((a) => {
                 const name = a.name?.trim();
                 return name && name !== a.address ? `${name} (${a.address})` : (name || a.address);
@@ -1485,7 +1487,11 @@ function ThreadMessageCard({
                   >
                     <FileIcon filename={att.filename} mimeType={att.mime_type} size={13} className="shrink-0" />
                     <span className="flex-1 min-w-0 truncate">{att.filename}</span>
-                    {att.content_id && <span className="text-label-11 text-secondary">inline</span>}
+                    {att.content_id && (
+                      <span className="text-label-11 text-secondary">
+                        {t("messageDetail.inlineAttachment")}
+                      </span>
+                    )}
                     <span className="text-label-12 text-secondary">
                       {att.size > 0 ? formatBytes(att.size) : ""}
                     </span>

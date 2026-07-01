@@ -141,12 +141,15 @@ func (a *TokenAuth) Login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Secure is enabled for HTTPS and trusted HTTPS reverse proxies. Direct
+	// HTTP-by-IP is an explicitly supported compatibility mode.
+	// codeql[go/cookie-secure-not-set]
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    token,
 		Path:     "/api/v1",
 		HttpOnly: true,
-		Secure:   requestIsSecure(r), // codeql[go/cookie-secure-not-set] Direct HTTP access is an explicit deployment mode.
+		Secure:   requestIsSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(a.sessionTTL.Seconds()),
 		Expires:  expiresAt,
@@ -168,12 +171,13 @@ func (a *TokenAuth) Logout(w http.ResponseWriter, r *http.Request) {
 			_ = database.RDB.Del(r.Context(), authSessionKey(hash)).Err()
 		}
 	}
+	// codeql[go/cookie-secure-not-set]
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    "",
 		Path:     "/api/v1",
 		HttpOnly: true,
-		Secure:   requestIsSecure(r), // codeql[go/cookie-secure-not-set] Direct HTTP access is an explicit deployment mode.
+		Secure:   requestIsSecure(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
@@ -193,12 +197,13 @@ func (a *TokenAuth) RequireToken(next http.Handler) http.Handler {
 		}
 		token := tokenFromRequest(r)
 		if token == "" || !a.validToken(r.Context(), token) {
+			// codeql[go/cookie-secure-not-set]
 			http.SetCookie(w, &http.Cookie{
 				Name:     authCookieName,
 				Value:    "",
 				Path:     "/api/v1",
 				HttpOnly: true,
-				Secure:   requestIsSecure(r), // codeql[go/cookie-secure-not-set] Direct HTTP access is an explicit deployment mode.
+				Secure:   requestIsSecure(r),
 				SameSite: http.SameSiteStrictMode,
 				MaxAge:   -1,
 			})

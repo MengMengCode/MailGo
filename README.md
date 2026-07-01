@@ -110,7 +110,7 @@ reset it later:
 
 ### Manual / 手动部署
 
-Requirements / 环境要求: Go 1.24+, Node.js 20+, MySQL 8.0+, Redis 7+
+Requirements / 环境要求: Go 1.25+, Node.js 20+, MySQL 8.0+, Redis 7+
 
 ```bash
 cd frontend && npm install && npm run build
@@ -328,8 +328,8 @@ for example `TRUSTED_PROXIES=172.18.0.0/16`.
 
 ## Technology Stack / 技术栈
 
-- Backend: Go 1.24, gorilla/mux, go-imap, go-message, AES-256-GCM, go-redis
-- Frontend: React 19, TypeScript 5, Vite 6, Tailwind CSS 4, openpgp, lucide-react, PDF.js
+- Backend: Go 1.25, gorilla/mux, go-imap, go-message, AES-256-GCM, go-redis
+- Frontend: React 19, TypeScript 5, Vite 8, Tailwind CSS 3, openpgp, lucide-react, PDF.js
 - Database: MySQL 8.0, Redis 7
 - Deployment: Docker, Docker Compose, GitHub Actions
 

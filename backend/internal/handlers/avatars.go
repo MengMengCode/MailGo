@@ -134,7 +134,8 @@ func GetGravatarAvatar(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) MailGo/1.0 Safari/537.36")
 	req.Header.Set("Accept", "image/*,*/*;q=0.8")
 
-	resp, err := client.Do(req) // codeql[go/request-forgery] safehttp validates redirects and dialed IPs.
+	// codeql[go/request-forgery]
+	resp, err := client.Do(req)
 	if err != nil {
 		_ = os.WriteFile(filepath.Join(cacheDir, key+".miss"), []byte(time.Now().UTC().Format(time.RFC3339)), 0644)
 		http.NotFound(w, r)
@@ -233,7 +234,9 @@ func probeURL(client *http.Client, url string) ([]byte, string, error) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) MailGo/1.0 Safari/537.36")
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-	resp, err := client.Do(req) // codeql[go/request-forgery] safehttp validates the URL and dialed IPs.
+	// safehttp validates the URL, every redirect, and the IP used at dial time.
+	// codeql[go/request-forgery]
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -289,7 +292,9 @@ func fetchFaviconFromHTML(client *http.Client, domain string) ([]byte, string, e
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) MailGo/1.0 Safari/537.36")
 		req.Header.Set("Accept", "text/html,*/*")
 
-		resp, err := client.Do(req) // codeql[go/request-forgery] safehttp validates redirects and dialed IPs.
+		// safehttp validates every redirect and the IP used at dial time.
+		// codeql[go/request-forgery]
+		resp, err := client.Do(req)
 		if err != nil {
 			continue
 		}

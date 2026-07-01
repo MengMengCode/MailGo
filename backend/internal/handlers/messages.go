@@ -1224,14 +1224,16 @@ func sendSMTP(account smtpAccount, from string, recipients []string, data []byte
 		// The MIME payload has passed validateOutboundMessage; all user-controlled
 		// headers are parsed as RFC 5322 addresses or rejected, and bodies are
 		// quoted-printable encoded by buildMIMEMessage.
-		return smtp.SendMail(addr, plainAuth, fromAddr, recipients, data) // codeql[go/email-injection]
+		// codeql[go/email-injection]
+		return smtp.SendMail(addr, plainAuth, fromAddr, recipients, data)
 
 	default:
 		// "starttls" or empty — smtp.SendMail handles STARTTLS upgrade
 		// and authentication automatically. When the server advertises
 		// STARTTLS, smtp.SendMail will upgrade the connection before
 		// authenticating.
-		return smtp.SendMail(addr, auth, fromAddr, recipients, data) // codeql[go/email-injection]
+		// codeql[go/email-injection]
+		return smtp.SendMail(addr, auth, fromAddr, recipients, data)
 	}
 }
 
@@ -1260,7 +1262,8 @@ func runSMTPClient(c *smtp.Client, auth smtp.Auth, from string, recipients []str
 	if err != nil {
 		return fmt.Errorf("DATA: %w", err)
 	}
-	if _, err := w.Write(data); err != nil { // codeql[go/email-injection]
+	// codeql[go/email-injection]
+	if _, err := w.Write(data); err != nil {
 		return fmt.Errorf("DATA write: %w", err)
 	}
 	if err := w.Close(); err != nil {

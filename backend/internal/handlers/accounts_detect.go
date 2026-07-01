@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -515,7 +516,9 @@ func fetchDiscoveryXML(endpoint, contentType, body string) ([]byte, error) {
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	res, err := client.Do(req) // codeql[go/request-forgery] safehttp validates the URL, redirects, and dialed IPs.
+	// safehttp validates the URL, every redirect, and the IP used at dial time.
+	// codeql[go/request-forgery]
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -793,7 +796,7 @@ func probeCandidates(candidates []detectCandidate) (*detectCandidate, ProbeRespo
 }
 
 func probeIMAP(host string, port int, encryption string) error {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 
 	var conn net.Conn
@@ -824,7 +827,7 @@ func probeIMAP(host string, port int, encryption string) error {
 }
 
 func probeSMTP(host string, port int, encryption string) error {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 
 	var conn net.Conn
@@ -937,7 +940,7 @@ func VerifyAccount(w http.ResponseWriter, r *http.Request) {
 // command, and checks the response. Uses implicit TLS for "ssl", STARTTLS
 // for "starttls", or plain for "none".
 func verifyIMAP(host string, port int, encryption string, username, password string) error {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 
 	var conn net.Conn
@@ -1016,7 +1019,7 @@ func verifyIMAP(host string, port int, encryption string, username, password str
 // LOGIN with base64-encoded credentials. Supports implicit TLS ("ssl"),
 // STARTTLS ("starttls"), and plain ("none").
 func verifySMTP(host string, port int, encryption string, username, password string) error {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 
 	var conn net.Conn

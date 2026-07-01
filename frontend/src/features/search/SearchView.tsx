@@ -81,7 +81,7 @@ export function SearchView() {
               <EmptyState
                 icon={<SearchIcon size={22} />}
                 title={t("search.title")}
-                description="Type to search through your messages"
+                description={t("search.startHint")}
               />
             ) : isLoading ? (
               <div className="p-6 text-center text-secondary">{t("common.loading")}</div>
