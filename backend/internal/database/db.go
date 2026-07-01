@@ -4,10 +4,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 var DB *sql.DB
@@ -31,37 +34,87 @@ func Initialize() error {
 		dbName = "mailgo"
 	}
 
+	baseConfig := mysql.Config{
+		User:         user,
+		Passwd:       pass,
+		Net:          "tcp",
+		Addr:         net.JoinHostPort(host, port),
+		ParseTime:    true,
+		Loc:          time.UTC,
+		Timeout:      10 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		Collation:    "utf8mb4_unicode_ci",
+	}
+
 	// First connect without database to create it if needed.
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/?charset=utf8mb4&parseTime=true&loc=UTC", user, pass, host, port)
+	dsn := baseConfig.FormatDSN()
 	rootDB, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("mysql root connect: %w", err)
 	}
+	rootDB.SetMaxOpenConns(2)
+	rootDB.SetMaxIdleConns(1)
+	defer rootDB.Close()
 	if err := rootDB.Ping(); err != nil {
 		return fmt.Errorf("mysql ping: %w", err)
 	}
 	_, err = rootDB.Exec("CREATE DATABASE IF NOT EXISTS `" + dbName + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-	rootDB.Close()
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
 	}
 
 	// Connect to the application database.
-	dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=UTC&multiStatements=true",
-		user, pass, host, port, dbName)
+	appConfig := baseConfig
+	appConfig.DBName = dbName
+	appConfig.MultiStatements = true
+	dsn = appConfig.FormatDSN()
 	DB, err = sql.Open("mysql", dsn)
 	if err != nil {
 		return fmt.Errorf("mysql open: %w", err)
 	}
 
-	DB.SetMaxOpenConns(25)
-	DB.SetMaxIdleConns(10)
+	maxOpen := envInt("MYSQL_MAX_OPEN_CONNS", 10)
+	maxIdle := envInt("MYSQL_MAX_IDLE_CONNS", 5)
+	if maxOpen < 1 {
+		maxOpen = 1
+	}
+	if maxIdle < 0 {
+		maxIdle = 0
+	}
+	if maxIdle > maxOpen {
+		maxIdle = maxOpen
+	}
+	DB.SetMaxOpenConns(maxOpen)
+	DB.SetMaxIdleConns(maxIdle)
+	DB.SetConnMaxLifetime(30 * time.Minute)
+	DB.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err := DB.Ping(); err != nil {
+		DB.Close()
+		DB = nil
 		return fmt.Errorf("mysql ping db: %w", err)
 	}
 
-	return runMigrations()
+	if err := runMigrations(); err != nil {
+		DB.Close()
+		DB = nil
+		return err
+	}
+	return nil
+}
+
+func envInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("Invalid %s=%q, using %d", key, value, fallback)
+		return fallback
+	}
+	return parsed
 }
 
 func runMigrations() error {
@@ -126,6 +179,14 @@ func runMigrations() error {
 	}
 	if err := ensureColumn("accounts", "sync_days", "INT NOT NULL DEFAULT 0"); err != nil {
 		log.Printf("ensureColumn accounts.sync_days error: %v", err)
+		return err
+	}
+	if err := ensureColumn("accounts", "sync_max_messages", "INT NOT NULL DEFAULT 0"); err != nil {
+		log.Printf("ensureColumn accounts.sync_max_messages error: %v", err)
+		return err
+	}
+	if err := ensureColumn("accounts", "oauth_expires_at", "DATETIME"); err != nil {
+		log.Printf("ensureColumn accounts.oauth_expires_at error: %v", err)
 		return err
 	}
 	// Ensure indexes exist (idempotent — ignores duplicate key errors).

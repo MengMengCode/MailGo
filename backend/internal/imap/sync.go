@@ -1,6 +1,7 @@
 package imap
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -19,8 +20,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"mailgo/internal/appclock"
 	"mailgo/internal/crypto"
 	"mailgo/internal/database"
+	"mailgo/internal/microsoftauth"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
@@ -92,6 +95,16 @@ type SyncResult struct {
 // single syncFolder call.  Keeping this finite avoids holding the entire
 // mailbox in memory at once and lets us print progress for large folders.
 const batchSize = 500
+
+type imapFetchFunc func(*imap.SeqSet, []imap.FetchItem, chan *imap.Message) error
+
+func startFetch(fetch imapFetchFunc, seqSet *imap.SeqSet, items []imap.FetchItem, messages chan *imap.Message) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- fetch(seqSet, items, messages)
+	}()
+	return errCh
+}
 
 // SyncAccount connects to the account's IMAP server and pulls new mail
 // for every known folder, up to fetchLimit messages per folder since the
@@ -184,7 +197,7 @@ func SyncAccount(cfg AccountConfig) SyncResult {
 			"updated_at":    time.Now().UTC().Format(time.RFC3339),
 		})
 
-		n, lastUID, ferr := syncFolder(c, cfg.ID, f, serverName, cfg.SyncDays)
+		n, lastUID, ferr := syncFolder(c, cfg.ID, f, serverName, cfg.SyncDays, cfg.SyncMaxMessages)
 
 		// If the connection was closed, reconnect and retry once.
 		if ferr != nil && isConnectionError(ferr) {
@@ -215,7 +228,7 @@ func SyncAccount(cfg AccountConfig) SyncResult {
 			for _, mb := range serverMailboxes {
 				serverSet[normalizeMailboxName(mb.Name)] = true
 			}
-			n, lastUID, ferr = syncFolder(c, cfg.ID, f, serverName, cfg.SyncDays)
+			n, lastUID, ferr = syncFolder(c, cfg.ID, f, serverName, cfg.SyncDays, cfg.SyncMaxMessages)
 		}
 
 		if ferr != nil {
@@ -445,7 +458,7 @@ func loadAccountFolders(accountID int64) ([]accountFolder, error) {
 // the IMAP server (may differ from f.Name when the provider uses a
 // different name like "Sent Messages"). Returns the count of newly
 // stored messages and the highest UID seen.
-func syncFolder(c *client.Client, accountID int64, f accountFolder, serverName string, syncDays int) (int, uint32, error) {
+func syncFolder(c *client.Client, accountID int64, f accountFolder, serverName string, syncDays, syncMaxMessages int) (int, uint32, error) {
 	mbox, err := c.Select(serverName, false)
 	if err != nil {
 		return 0, 0, fmt.Errorf("select %s: %w", serverName, err)
@@ -480,147 +493,114 @@ func syncFolder(c *client.Client, accountID int64, f accountFolder, serverName s
 		log.Printf("imap sync acct%d %s: first sync, fetching %d messages (syncDays=%d)",
 			accountID, serverName, mbox.Messages, syncDays)
 
+		var cutoff time.Time
 		if syncDays > 0 {
-			// Use IMAP SEARCH to find messages received in the last N days,
-			// then fetch them in descending-UID (newest-first) batches.
-			since := time.Now().AddDate(0, 0, -syncDays)
-			criteria := imap.NewSearchCriteria()
-			criteria.Since = since
-			criteria.WithoutFlags = []string{imap.DeletedFlag}
-			uids, searchErr := c.Search(criteria)
-			if searchErr != nil {
-				return 0, 0, fmt.Errorf("search %s SINCE %s: %w", serverName, since.Format("02-Jan-2006"), searchErr)
+			cutoff = appclock.StartOfDayDaysAgo(syncDays)
+		}
+		processedCount := 0
+		reachedCutoff := false
+		reachedLimit := false
+		// Fetch ALL messages newest-first (descending sequence numbers), but
+		// stop as soon as the configured time or message-count boundary is
+		// reached. This is more reliable than IMAP SEARCH because SEARCH
+		// returns sequence numbers unless UID SEARCH is used, and providers
+		// differ in how they interpret date criteria.
+		for start := mbox.Messages; start >= 1; {
+			end := start
+			batchStart := uint32(1)
+			if start > uint32(batchSize) {
+				batchStart = start - uint32(batchSize) + 1
 			}
-			if len(uids) == 0 {
-				log.Printf("imap sync acct%d %s: SINCE %s returned 0 messages", accountID, serverName, since.Format("02-Jan-2006"))
-			} else {
-				// Sort UIDs descending (newest first)
-				sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
-				log.Printf("imap sync acct%d %s: SINCE %s found %d messages, syncing newest-first", accountID, serverName, since.Format("02-Jan-2006"), len(uids))
 
-				for batchStart := 0; batchStart < len(uids); batchStart += batchSize {
-					batchEnd := batchStart + batchSize
-					if batchEnd > len(uids) {
-						batchEnd = len(uids)
-					}
-					batchUIDs := uids[batchStart:batchEnd]
+			seqSet := new(imap.SeqSet)
+			seqSet.AddRange(batchStart, end)
 
-					uidSet := new(imap.SeqSet)
-					uidSet.AddNum(batchUIDs...)
+			messages := make(chan *imap.Message, 16)
+			errCh := startFetch(c.Fetch, seqSet, items, messages)
 
-					messages := make(chan *imap.Message, 16)
-					go func() {
-						if err := c.UidFetch(uidSet, items, messages); err != nil {
-							log.Printf("uid fetch acct%d %s SINCE batch: %v", accountID, f.Name, err)
-						}
-					}()
-					for msg := range messages {
-						if msg == nil {
-							continue
-						}
-						if msg.Uid > lastUID {
-							lastUID = msg.Uid
-						}
-						if stored := storeMessage(accountID, f.ID, msg, section); stored {
-							totalCount++
-						}
-					}
-					log.Printf("imap sync acct%d %s: batch %d/%d done (%d UIDs), %d stored so far",
-						accountID, serverName, batchStart/batchSize+1, (len(uids)+batchSize-1)/batchSize, len(batchUIDs), totalCount)
-
-					// Persist progress after each batch for resume.
-					if lastUID > 0 {
-						_, _ = database.DB.Exec(
-							"UPDATE folders SET last_synced_at = ?, uid_next = ? WHERE id = ?",
-							time.Now().UTC(), int64(lastUID), f.ID)
-					}
-					database.SyncProgressSetMulti(accountID, map[string]interface{}{
-						"folder_synced": totalCount,
-						"last_uid":      lastUID,
-						"updated_at":    time.Now().UTC().Format(time.RFC3339),
-					})
+			var batchMessages []*imap.Message
+			for msg := range messages {
+				if msg != nil {
+					batchMessages = append(batchMessages, msg)
 				}
-				log.Printf("imap sync acct%d %s: SINCE %s done, %d stored, lastUID=%d", accountID, serverName, since.Format("02-Jan-2006"), totalCount, lastUID)
 			}
-		} else {
-			// syncDays == 0: fetch ALL messages, newest-first (descending
-			// sequence numbers).  Sequence N is the Nth message in arrival
-			// order, so the highest sequence is the newest.
-			for start := mbox.Messages; start >= 1; {
-				end := start
-				batchStart := start - uint32(batchSize) + 1
-				if batchStart < 1 {
-					batchStart = 1
-				}
+			if err := <-errCh; err != nil {
+				return totalCount, lastUID, fmt.Errorf("fetch %s seq %d:%d: %w", serverName, batchStart, end, err)
+			}
+			sort.Slice(batchMessages, func(i, j int) bool {
+				return batchMessages[i].SeqNum > batchMessages[j].SeqNum
+			})
 
-				seqSet := new(imap.SeqSet)
-				seqSet.AddRange(batchStart, end)
-
-				messages := make(chan *imap.Message, 16)
-				go func() {
-					if err := c.Fetch(seqSet, items, messages); err != nil {
-						log.Printf("uid fetch acct%d %s seq %d:%d: %v", accountID, f.Name, batchStart, end, err)
-					}
-				}()
-
-				batchCount := 0
-				batchSkipped := 0
-				for msg := range messages {
-					if msg == nil {
-						continue
-					}
-					if msg.Uid > lastUID {
-						lastUID = msg.Uid
-					}
-					if stored := storeMessage(accountID, f.ID, msg, section); stored {
-						batchCount++
-						totalCount++
-					} else {
-						batchSkipped++
-					}
-				}
-				log.Printf("imap sync acct%d %s: batch %d-%d done, %d new, %d existing (total %d/%d)",
-					accountID, serverName, batchStart, end, batchCount, batchSkipped, totalCount, mbox.Messages)
-
-				// Persist uid_next after each batch for resume.
-				if lastUID > 0 {
-					_, _ = database.DB.Exec(
-						"UPDATE folders SET last_synced_at = ?, uid_next = ? WHERE id = ?",
-						time.Now().UTC(), int64(lastUID), f.ID)
-				}
-				database.SyncProgressSetMulti(accountID, map[string]interface{}{
-					"folder_synced": totalCount,
-					"last_uid":      lastUID,
-					"updated_at":    time.Now().UTC().Format(time.RFC3339),
-				})
-
-				// Move to the next batch. Use an explicit guard to
-				// prevent unsigned underflow when start < batchSize.
-				if batchStart <= 1 {
+			batchCount := 0
+			batchSkipped := 0
+			for _, msg := range batchMessages {
+				msgDate := messageSyncDate(msg)
+				if !cutoff.IsZero() && msgDate.Before(cutoff) {
+					reachedCutoff = true
 					break
 				}
-				start = batchStart - 1
+				if msg.Uid > lastUID {
+					lastUID = msg.Uid
+				}
+				if syncMaxMessages > 0 && processedCount >= syncMaxMessages {
+					reachedLimit = true
+					break
+				}
+				processedCount++
+				if stored := storeMessage(accountID, f.ID, msg, section); stored {
+					batchCount++
+					totalCount++
+				} else {
+					batchSkipped++
+				}
 			}
+
+			if reachedCutoff && lastUID == 0 && mbox.UidNext > 1 {
+				// The mailbox only had older mail. Mark the first sync as
+				// complete so future syncs only look for genuinely new mail.
+				lastUID = mbox.UidNext - 1
+			}
+
+			log.Printf("imap sync acct%d %s: batch %d-%d done, %d new, %d existing (total %d/%d)",
+				accountID, serverName, batchStart, end, batchCount, batchSkipped, totalCount, mbox.Messages)
+
+			// Persist uid_next after each batch for resume.
+			if lastUID > 0 {
+				_, _ = database.DB.Exec(
+					"UPDATE folders SET last_synced_at = ?, uid_next = ? WHERE id = ?",
+					time.Now().UTC(), int64(lastUID), f.ID)
+			}
+			database.SyncProgressSetMulti(accountID, map[string]interface{}{
+				"folder_synced": totalCount,
+				"last_uid":      lastUID,
+				"updated_at":    time.Now().UTC().Format(time.RFC3339),
+			})
+
+			if reachedCutoff {
+				log.Printf("imap sync acct%d %s: reached syncDays cutoff %s, stopping history backfill",
+					accountID, serverName, cutoff.Format("2006-01-02"))
+				break
+			}
+			if reachedLimit {
+				log.Printf("imap sync acct%d %s: reached syncMaxMessages=%d, stopping history backfill",
+					accountID, serverName, syncMaxMessages)
+				break
+			}
+			// Move to the next batch. Use an explicit guard to
+			// prevent unsigned underflow when start < batchSize.
+			if batchStart <= 1 {
+				break
+			}
+			start = batchStart - 1
 		}
 
-		// Clean up local messages older than syncDays for this folder.
-		if syncDays > 0 {
-			cutoff := time.Now().AddDate(0, 0, -syncDays)
-			res, delErr := database.DB.Exec(
-				"DELETE FROM messages WHERE account_id = ? AND folder_id = ? AND received_at < ?",
-				accountID, f.ID, cutoff.Format("2006-01-02"))
-			if delErr != nil {
-				log.Printf("imap sync acct%d %s: cleanup error: %v", accountID, serverName, delErr)
-			} else if n, _ := res.RowsAffected(); n > 0 {
-				log.Printf("imap sync acct%d %s: cleaned up %d old messages (older than %s)",
-					accountID, serverName, n, cutoff.Format("2006-01-02"))
-			}
-		}
+		cleanupOldMessages(accountID, f.ID, serverName, syncDays)
 	} else {
 		// ── Incremental sync: fetch from LastUID+1 to UidNext-1 ──
 		// This naturally covers all messages arrived since the last sync.
 		from := f.LastUID + 1
 		if from >= mbox.UidNext {
+			cleanupOldMessages(accountID, f.ID, serverName, syncDays)
 			return 0, mbox.UidNext - 1, nil
 		}
 
@@ -630,11 +610,7 @@ func syncFolder(c *client.Client, accountID int64, f accountFolder, serverName s
 		seqSet.AddRange(from, mbox.UidNext-1)
 
 		messages := make(chan *imap.Message, 16)
-		go func() {
-			if err := c.UidFetch(seqSet, items, messages); err != nil {
-				log.Printf("uid fetch acct%d %s: %v", accountID, f.Name, err)
-			}
-		}()
+		errCh := startFetch(c.UidFetch, seqSet, items, messages)
 
 		for msg := range messages {
 			if msg == nil {
@@ -647,6 +623,9 @@ func syncFolder(c *client.Client, accountID int64, f accountFolder, serverName s
 				totalCount++
 			}
 		}
+		if err := <-errCh; err != nil {
+			return totalCount, lastUID, fmt.Errorf("uid fetch %s: %w", serverName, err)
+		}
 
 		database.SyncProgressSetMulti(accountID, map[string]interface{}{
 			"folder_synced": totalCount,
@@ -654,22 +633,26 @@ func syncFolder(c *client.Client, accountID int64, f accountFolder, serverName s
 			"updated_at":    time.Now().UTC().Format(time.RFC3339),
 		})
 
-		// Clean up local messages older than syncDays for this folder.
-		if syncDays > 0 {
-			cutoff := time.Now().AddDate(0, 0, -syncDays)
-			res, delErr := database.DB.Exec(
-				"DELETE FROM messages WHERE account_id = ? AND folder_id = ? AND received_at < ?",
-				accountID, f.ID, cutoff.Format("2006-01-02"))
-			if delErr != nil {
-				log.Printf("imap sync acct%d %s: cleanup error: %v", accountID, serverName, delErr)
-			} else if n, _ := res.RowsAffected(); n > 0 {
-				log.Printf("imap sync acct%d %s: cleaned up %d old messages (older than %s)",
-					accountID, serverName, n, cutoff.Format("2006-01-02"))
-			}
-		}
+		cleanupOldMessages(accountID, f.ID, serverName, syncDays)
 	}
 
 	return totalCount, lastUID, nil
+}
+
+func cleanupOldMessages(accountID, folderID int64, serverName string, syncDays int) {
+	if syncDays <= 0 {
+		return
+	}
+	cutoff := appclock.StartOfDayDaysAgo(syncDays)
+	res, delErr := database.DB.Exec(
+		"DELETE FROM messages WHERE account_id = ? AND folder_id = ? AND received_at < ?",
+		accountID, folderID, cutoff.Format("2006-01-02"))
+	if delErr != nil {
+		log.Printf("imap sync acct%d %s: cleanup error: %v", accountID, serverName, delErr)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("imap sync acct%d %s: cleaned up %d old messages (older than %s)",
+			accountID, serverName, n, cutoff.Format("2006-01-02"))
+	}
 }
 
 // storeMessage parses one IMAP message and inserts it (if not already
@@ -753,6 +736,19 @@ func storeMessage(accountID, folderID int64, msg *imap.Message, section *imap.Bo
 		}
 	}
 	return true
+}
+
+func messageSyncDate(msg *imap.Message) time.Time {
+	if msg == nil {
+		return time.Now().UTC()
+	}
+	if !msg.InternalDate.IsZero() {
+		return msg.InternalDate
+	}
+	if msg.Envelope != nil && !msg.Envelope.Date.IsZero() {
+		return msg.Envelope.Date
+	}
+	return time.Now().UTC()
 }
 
 // qpEncodedPattern matches runs of quoted-printable escape sequences such
@@ -1267,7 +1263,8 @@ func repairFolderMessages(c *client.Client, msgs []repairCandidate, serverName s
 // connect.
 func LoadAccountConfigs(accountID int64) ([]AccountConfig, error) {
 	query := `SELECT id, imap_host, imap_port, imap_tls, COALESCE(imap_encryption, ''), username,
-		COALESCE(password_encrypted, ''), COALESCE(sync_days, 0) FROM accounts`
+		COALESCE(provider, ''),
+		COALESCE(password_encrypted, ''), COALESCE(sync_days, 0), COALESCE(sync_max_messages, 0) FROM accounts`
 	args := []interface{}{}
 	if accountID > 0 {
 		query += ` WHERE id = ?`
@@ -1284,7 +1281,8 @@ func LoadAccountConfigs(accountID int64) ([]AccountConfig, error) {
 	var out []AccountConfig
 	for rows.Next() {
 		var cfg AccountConfig
-		if err := rows.Scan(&cfg.ID, &cfg.Host, &cfg.Port, &cfg.TLS, &cfg.Encryption, &cfg.Username, &cfg.Password, &cfg.SyncDays); err != nil {
+		var provider string
+		if err := rows.Scan(&cfg.ID, &cfg.Host, &cfg.Port, &cfg.TLS, &cfg.Encryption, &cfg.Username, &provider, &cfg.Password, &cfg.SyncDays, &cfg.SyncMaxMessages); err != nil {
 			return nil, err
 		}
 		if dec, err := crypto.Decrypt(cfg.Password); err == nil {
@@ -1292,7 +1290,15 @@ func LoadAccountConfigs(accountID int64) ([]AccountConfig, error) {
 		} else {
 			log.Printf("LoadAccountConfigs: decrypt password for account %d: %v", cfg.ID, err)
 		}
-		if cfg.Host == "" || cfg.Username == "" || cfg.Password == "" {
+		if provider == "microsoft" {
+			token, err := microsoftauth.AccessTokenForAccount(context.Background(), cfg.ID)
+			if err != nil {
+				log.Printf("LoadAccountConfigs: Microsoft token for account %d: %v", cfg.ID, err)
+				continue
+			}
+			cfg.OAuthToken = token
+		}
+		if cfg.Host == "" || cfg.Username == "" || (cfg.Password == "" && cfg.OAuthToken == "") {
 			continue
 		}
 		out = append(out, cfg)

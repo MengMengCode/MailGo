@@ -3,6 +3,8 @@ package handlers
 import (
 	"database/sql"
 	"log"
+	"mailgo/internal/appclock"
+	"mailgo/internal/crypto"
 	"mailgo/internal/database"
 	"mailgo/internal/models"
 	"net/http"
@@ -13,34 +15,37 @@ import (
 // allowedSettingKeys is the whitelist of setting keys that can be modified
 // via the API. This prevents arbitrary key injection.
 var allowedSettingKeys = map[string]bool{
-	"language":                 true,
-	"theme":                    true,
-	"auto_refresh_enabled":     true,
-	"check_interval":           true,
+	"language":                   true,
+	"theme":                      true,
+	"app_timezone":               true,
+	"auto_refresh_enabled":       true,
+	"check_interval":             true,
 	"auto_load_remote_resources": true,
-	"prevent_tracking":         true,
-	"appearance":               true,
-	"ai_base_url":              true,
-	"ai_api_key":               true,
-	"ai_model":                 true,
-	"ai_context_window":        true,
-	"ai_translate_use_global":  true,
-	"ai_translate_base_url":    true,
-	"ai_translate_api_key":     true,
-	"ai_translate_model":       true,
-	"ai_translate_prompt":      true,
-	"ai_target_lang":           true,
-	"ai_translate_enabled":     true,
-	"ai_summarize_enabled":     true,
-	"retention_messages_days":  true,
+	"prevent_tracking":           true,
+	"appearance":                 true,
+	"ai_base_url":                true,
+	"ai_api_key":                 true,
+	"ai_model":                   true,
+	"ai_context_window":          true,
+	"ai_translate_use_global":    true,
+	"ai_translate_base_url":      true,
+	"ai_translate_api_key":       true,
+	"ai_translate_model":         true,
+	"ai_translate_prompt":        true,
+	"ai_target_lang":             true,
+	"ai_translate_enabled":       true,
+	"ai_summarize_enabled":       true,
+	"retention_messages_days":    true,
 	"retention_attachments_days": true,
-	"retention_images_days":    true,
-	"storage_limit_gb":         true,
-	"autosave_interval":        true,
-	"custom_css":               true,
-	"conversation_view":        true,
-	"show_unread_counts":       true,
-	"custom_folders":           true,
+	"retention_images_days":      true,
+	"storage_limit_gb":           true,
+	"autosave_interval":          true,
+	"custom_css":                 true,
+	"conversation_view":          true,
+	"show_unread_counts":         true,
+	"custom_folders":             true,
+	"microsoft_client_id":        true,
+	"microsoft_client_secret":    true,
 }
 
 // Settings
@@ -60,7 +65,7 @@ func ListSettings(w http.ResponseWriter, r *http.Request) {
 			log.Printf("ListSettings scan error: %v", err)
 			continue
 		}
-		if (s.Key == "ai_api_key" || s.Key == "ai_translate_api_key") && s.Value != "" {
+		if (s.Key == "ai_api_key" || s.Key == "ai_translate_api_key" || s.Key == "microsoft_client_secret") && s.Value != "" {
 			s.Value = "__configured__"
 		}
 		if s.Key == "web_password" {
@@ -68,7 +73,22 @@ func ListSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		settings = append(settings, s)
 	}
+	if !hasSetting(settings, appclock.SettingKey) {
+		settings = append(settings, models.Setting{
+			Key:   appclock.SettingKey,
+			Value: appclock.ServerTimezone(),
+		})
+	}
 	respondJSON(w, http.StatusOK, settings)
+}
+
+func hasSetting(settings []models.Setting, key string) bool {
+	for _, setting := range settings {
+		if setting.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func UpdateSetting(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +110,22 @@ func UpdateSetting(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(r, &body); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
+	}
+	if key == appclock.SettingKey && !appclock.ValidateTimezone(body.Value) {
+		respondError(w, http.StatusBadRequest, "Invalid timezone")
+		return
+	}
+	if key == "microsoft_client_secret" {
+		if body.Value == "__configured__" {
+			respondJSON(w, http.StatusOK, map[string]string{"message": "Setting unchanged"})
+			return
+		}
+		encrypted, err := crypto.Encrypt(body.Value)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to secure Microsoft client secret")
+			return
+		}
+		body.Value = encrypted
 	}
 
 	_, err := database.DB.Exec(`INSERT INTO settings (setting_key, setting_value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)

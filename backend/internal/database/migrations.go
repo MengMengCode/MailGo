@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     password_encrypted TEXT,
     oauth_token TEXT,
     oauth_refresh_token TEXT,
+    oauth_expires_at DATETIME,
     proxy_enabled TINYINT(1) NOT NULL DEFAULT 0,
     proxy_host VARCHAR(255) DEFAULT '',
     proxy_port INT DEFAULT 0,

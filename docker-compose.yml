@@ -16,6 +16,13 @@ services:
     image: mysql:8.0
     container_name: mailgo-mysql
     restart: unless-stopped
+    command:
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-256M}
+      - --innodb-log-file-size=${MYSQL_INNODB_LOG_FILE_SIZE:-128M}
+      - --innodb-flush-log-at-trx-commit=${MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT:-2}
+      - --innodb-flush-method=O_DIRECT
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-50}
+      - --performance-schema=OFF
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secret}
       MYSQL_DATABASE: mailgo

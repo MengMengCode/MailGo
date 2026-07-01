@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"mailgo/internal/microsoftauth"
 	"net"
 	"net/http"
 	"net/url"
@@ -63,13 +64,15 @@ type DetectRequest struct {
 }
 
 type DetectResponse struct {
-	Found        bool           `json:"found"`
-	Method       string         `json:"method"` // provider | mx | autoconfig | autodiscover | srv | guess | none
-	Provider     ProviderConfig `json:"provider"`
-	MXRecords    []string       `json:"mx_records"`
-	ImapOK       bool           `json:"imap_ok"`
-	SmtpOK       bool           `json:"smtp_ok"`
-	ErrorMessage string         `json:"error_message,omitempty"`
+	Found           bool           `json:"found"`
+	Method          string         `json:"method"` // provider | mx | autoconfig | autodiscover | srv | guess | none
+	Provider        ProviderConfig `json:"provider"`
+	MXRecords       []string       `json:"mx_records"`
+	ImapOK          bool           `json:"imap_ok"`
+	SmtpOK          bool           `json:"smtp_ok"`
+	ErrorMessage    string         `json:"error_message,omitempty"`
+	AuthType        string         `json:"auth_type,omitempty"`
+	OAuthConfigured bool           `json:"oauth_configured"`
 }
 
 // DetectAccount looks up known provider settings, inspects MX records, then
@@ -92,6 +95,10 @@ func DetectAccount(w http.ResponseWriter, r *http.Request) {
 		Method:    "none",
 		Provider:  newProvider("imap."+domain, 993, "smtp."+domain, 587),
 		MXRecords: []string{},
+	}
+	if microsoftauth.IsMicrosoftDomain(domain) {
+		resp.AuthType = "microsoft_oauth"
+		resp.OAuthConfigured = microsoftauth.Configured()
 	}
 	// Backfill the legacy boolean from the encryption mode for the
 	// initial guess (downstream code may read either field).
@@ -124,6 +131,7 @@ func DetectAccount(w http.ResponseWriter, r *http.Request) {
 		resp.Provider = selected.provider
 		resp.ImapOK = true
 		resp.SmtpOK = true
+		markMicrosoftDetection(&resp, domain)
 		respondJSON(w, http.StatusOK, resp)
 		return
 	}
@@ -145,6 +153,7 @@ func DetectAccount(w http.ResponseWriter, r *http.Request) {
 		resp.Provider = selected.provider
 		resp.ImapOK = true
 		resp.SmtpOK = true
+		markMicrosoftDetection(&resp, domain)
 		respondJSON(w, http.StatusOK, resp)
 		return
 	}
@@ -157,6 +166,15 @@ func DetectAccount(w http.ResponseWriter, r *http.Request) {
 		resp.ErrorMessage = probeErrors[0]
 	}
 	respondJSON(w, http.StatusOK, resp)
+}
+
+func markMicrosoftDetection(resp *DetectResponse, domain string) {
+	if microsoftauth.IsMicrosoftDomain(domain) ||
+		microsoftauth.IsMicrosoftHost(resp.Provider.ImapHost) ||
+		microsoftauth.IsMicrosoftHost(resp.Provider.SmtpHost) {
+		resp.AuthType = "microsoft_oauth"
+		resp.OAuthConfigured = microsoftauth.Configured()
+	}
 }
 
 type ProbeRequest struct {

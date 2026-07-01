@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 )
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -11,9 +12,21 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.WriteHeader(status)
 	if data != nil {
 		if err := json.NewEncoder(w).Encode(data); err != nil {
-			log.Printf("Failed to encode JSON response: %v", err)
+			if !isClientClosedResponseError(err) {
+				log.Printf("Failed to encode JSON response: %v", err)
+			}
 		}
 	}
+}
+
+func isClientClosedResponseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "use of closed network connection")
 }
 
 func respondError(w http.ResponseWriter, status int, message string) {

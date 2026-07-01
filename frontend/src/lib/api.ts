@@ -79,6 +79,7 @@ export interface Account {
   is_default: boolean;
   tag_color: string;
   sync_days: number;
+  sync_max_messages: number;
   last_sync_at: string | null;
   created_at: string;
   updated_at: string;
@@ -98,6 +99,7 @@ export interface AccountCreateRequest {
   smtp_encryption?: string;
   username: string;
   password: string;
+  oauth_flow_id?: string;
   sender_email?: string;
   avatar_url?: string;
   auto_reply_enabled?: boolean;
@@ -108,6 +110,7 @@ export interface AccountCreateRequest {
   proxy_port?: number;
   tag_color?: string;
   sync_days?: number;
+  sync_max_messages?: number;
 }
 
 export interface ProviderConfig {
@@ -129,6 +132,8 @@ export interface DetectResponse {
   imap_ok: boolean;
   smtp_ok: boolean;
   error_message?: string;
+  auth_type?: "microsoft_oauth";
+  oauth_configured: boolean;
 }
 
 export interface ProbeRequest {
@@ -217,7 +222,31 @@ export const accountsApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  startMicrosoftDeviceAuth: (email: string) =>
+    request<MicrosoftDeviceAuthorization>("/accounts/microsoft/device/start", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  pollMicrosoftDeviceAuth: (flowId: string) =>
+    request<MicrosoftDevicePoll>("/accounts/microsoft/device/poll", {
+      method: "POST",
+      body: JSON.stringify({ flow_id: flowId }),
+    }),
 };
+
+export interface MicrosoftDeviceAuthorization {
+  flow_id: string;
+  user_code: string;
+  verification_uri: string;
+  message: string;
+  expires_in: number;
+  interval: number;
+}
+
+export interface MicrosoftDevicePoll {
+  status: "pending" | "authorized";
+  interval?: number;
+}
 
 export interface AttachmentPreviewData {
   filename: string;
@@ -492,7 +521,7 @@ export const settingsApi = {
     // is also fired in the same tab via a custom event (browsers only fire
     // `storage` on *other* tabs by default).
     try {
-      if (key === "ai_api_key") {
+      if (key === "ai_api_key" || key === "microsoft_client_secret") {
         localStorage.removeItem(`mailgo-setting:${key}`);
       } else {
         localStorage.setItem(`mailgo-setting:${key}`, String(value));

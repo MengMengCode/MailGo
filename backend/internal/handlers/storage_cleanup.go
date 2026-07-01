@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"log"
+	"mailgo/internal/appclock"
 	"mailgo/internal/database"
 )
 
 const (
 	// Emergency thresholds when no explicit retention is configured.
-	emergencyFreeBytes = 5 * 1024 * 1024    // 5 MB — trigger cleanup
-	targetFreeBytes    = 100 * 1024 * 1024  // 100 MB — clean until this free
+	emergencyFreeBytes = 5 * 1024 * 1024   // 5 MB — trigger cleanup
+	targetFreeBytes    = 100 * 1024 * 1024 // 100 MB — clean until this free
 )
 
 // RunStorageCleanup enforces retention policies and storage limits.
@@ -28,12 +29,13 @@ func RunStorageCleanup() {
 
 	// --- 1. Retention cleanup (always runs when days > 0) ---
 	if retentionMessages > 0 {
+		cutoff := appclock.StartOfDayDaysAgo(retentionMessages)
 		res, err := database.DB.Exec(
 			`UPDATE messages SET body_text = NULL, body_html = NULL
 			 WHERE is_deleted = 0
 			   AND received_at IS NOT NULL
-			   AND received_at < DATE_SUB(NOW(), INTERVAL ? DAY)`,
-			retentionMessages,
+			   AND received_at < ?`,
+			cutoff,
 		)
 		if err != nil {
 			log.Printf("cleanup: retention messages error: %v", err)
@@ -43,6 +45,7 @@ func RunStorageCleanup() {
 	}
 
 	if retentionAttachments > 0 {
+		cutoff := appclock.StartOfDayDaysAgo(retentionAttachments)
 		res, err := database.DB.Exec(
 			`UPDATE attachments SET content = NULL, content_expires_at = NULL
 			 WHERE mime_type NOT LIKE 'image/%'
@@ -50,9 +53,9 @@ func RunStorageCleanup() {
 			   AND message_id IN (
 			     SELECT id FROM messages
 			     WHERE received_at IS NOT NULL
-			       AND received_at < DATE_SUB(NOW(), INTERVAL ? DAY)
+			       AND received_at < ?
 			   )`,
-			retentionAttachments,
+			cutoff,
 		)
 		if err != nil {
 			log.Printf("cleanup: retention attachments error: %v", err)
@@ -62,6 +65,7 @@ func RunStorageCleanup() {
 	}
 
 	if retentionImages > 0 {
+		cutoff := appclock.StartOfDayDaysAgo(retentionImages)
 		res, err := database.DB.Exec(
 			`UPDATE attachments SET content = NULL, content_expires_at = NULL
 			 WHERE mime_type LIKE 'image/%'
@@ -69,9 +73,9 @@ func RunStorageCleanup() {
 			   AND message_id IN (
 			     SELECT id FROM messages
 			     WHERE received_at IS NOT NULL
-			       AND received_at < DATE_SUB(NOW(), INTERVAL ? DAY)
+			       AND received_at < ?
 			   )`,
-			retentionImages,
+			cutoff,
 		)
 		if err != nil {
 			log.Printf("cleanup: retention images error: %v", err)

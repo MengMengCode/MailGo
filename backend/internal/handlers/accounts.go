@@ -6,6 +6,7 @@ import (
 	"log"
 	"mailgo/internal/crypto"
 	"mailgo/internal/database"
+	"mailgo/internal/microsoftauth"
 	"mailgo/internal/models"
 	"net/http"
 	"strconv"
@@ -43,10 +44,20 @@ func encryptionToBool(enc string) bool {
 	return enc != "none"
 }
 
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
 const accountSelectCols = `id, name, email, provider, imap_host, imap_port, imap_tls, imap_encryption,
 	smtp_host, smtp_port, smtp_tls, smtp_encryption, username, sender_email, avatar_url,
 	auto_reply_enabled, auto_reply_subject, auto_reply_body, proxy_enabled, proxy_host, proxy_port,
-	is_default, tag_color, sync_days, last_sync_at, created_at, updated_at`
+	is_default, tag_color, sync_days, sync_max_messages, last_sync_at, created_at, updated_at`
 
 func scanAccount(scanner interface{ Scan(...interface{}) error }) (models.Account, error) {
 	var a models.Account
@@ -54,7 +65,7 @@ func scanAccount(scanner interface{ Scan(...interface{}) error }) (models.Accoun
 		&a.ImapTLS, &a.ImapEncryption, &a.SmtpHost, &a.SmtpPort, &a.SmtpTLS, &a.SmtpEncryption,
 		&a.Username, &a.SenderEmail, &a.AvatarURL, &a.AutoReplyEnabled, &a.AutoReplySubject, &a.AutoReplyBody,
 		&a.ProxyEnabled, &a.ProxyHost, &a.ProxyPort, &a.IsDefault,
-		&a.TagColor, &a.SyncDays, &a.LastSyncAt, &a.CreatedAt, &a.UpdatedAt)
+		&a.TagColor, &a.SyncDays, &a.SyncMaxMessages, &a.LastSyncAt, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
 }
 
@@ -133,6 +144,8 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	req.SmtpEncryption = normalizeEncryption(req.SmtpEncryption, req.SmtpPort)
 	req.ImapTLS = encryptionToBool(req.ImapEncryption)
 	req.SmtpTLS = encryptionToBool(req.SmtpEncryption)
+	req.SyncDays = clampInt(req.SyncDays, 0, 3650)
+	req.SyncMaxMessages = clampInt(req.SyncMaxMessages, 0, 100000)
 
 	encPassword, encErr := encryptPassword(req.Password)
 	if encErr != nil {
@@ -140,14 +153,37 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var oauthToken, oauthRefresh string
+	var oauthExpires interface{}
+	if req.Provider == "microsoft" || microsoftauth.IsMicrosoftHost(req.ImapHost) {
+		if !microsoftauth.Configured() {
+			respondError(w, http.StatusBadRequest, "Configure Microsoft Client ID and Client Secret before adding this account")
+			return
+		}
+		if req.OAuthFlowID == "" {
+			respondError(w, http.StatusBadRequest, "Microsoft authorization is required")
+			return
+		}
+		access, refresh, expiresAt, err := microsoftauth.ConsumeAuthorizedFlow(req.OAuthFlowID, req.Email)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		oauthToken, oauthRefresh, oauthExpires = access, refresh, expiresAt
+		req.Provider = "microsoft"
+		encPassword = ""
+	}
+
 	result, err := database.DB.Exec(`INSERT INTO accounts (name, email, provider, imap_host, imap_port, imap_tls, imap_encryption,
 		smtp_host, smtp_port, smtp_tls, smtp_encryption, username, password_encrypted, sender_email, avatar_url,
-		auto_reply_enabled, auto_reply_subject, auto_reply_body, proxy_enabled, proxy_host, proxy_port, tag_color, sync_days)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		auto_reply_enabled, auto_reply_subject, auto_reply_body, proxy_enabled, proxy_host, proxy_port, tag_color, sync_days, sync_max_messages,
+		oauth_token, oauth_refresh_token, oauth_expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		req.Name, req.Email, req.Provider, req.ImapHost, req.ImapPort, req.ImapTLS, req.ImapEncryption,
 		req.SmtpHost, req.SmtpPort, req.SmtpTLS, req.SmtpEncryption, req.Username, encPassword,
 		req.SenderEmail, req.AvatarURL, req.AutoReplyEnabled, req.AutoReplySubject, req.AutoReplyBody,
-		req.ProxyEnabled, req.ProxyHost, req.ProxyPort, req.TagColor, req.SyncDays)
+		req.ProxyEnabled, req.ProxyHost, req.ProxyPort, req.TagColor, req.SyncDays, req.SyncMaxMessages,
+		oauthToken, oauthRefresh, oauthExpires)
 	if err != nil {
 		log.Printf("CreateAccount error: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to create account")
@@ -155,6 +191,9 @@ func CreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, _ := result.LastInsertId()
+	if req.OAuthFlowID != "" {
+		microsoftauth.ForgetFlow(req.OAuthFlowID)
+	}
 
 	// Create default folders with role tags
 	defaultFolders := []struct {
@@ -198,15 +237,17 @@ func UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	req.SmtpEncryption = normalizeEncryption(req.SmtpEncryption, req.SmtpPort)
 	req.ImapTLS = encryptionToBool(req.ImapEncryption)
 	req.SmtpTLS = encryptionToBool(req.SmtpEncryption)
+	req.SyncDays = clampInt(req.SyncDays, 0, 3650)
+	req.SyncMaxMessages = clampInt(req.SyncMaxMessages, 0, 100000)
 
 	_, err := database.DB.Exec(`UPDATE accounts SET name=?, email=?, provider=?, imap_host=?, imap_port=?, imap_tls=?, imap_encryption=?,
 		smtp_host=?, smtp_port=?, smtp_tls=?, smtp_encryption=?, username=?, sender_email=?, avatar_url=?,
 		auto_reply_enabled=?, auto_reply_subject=?, auto_reply_body=?, proxy_enabled=?, proxy_host=?, proxy_port=?,
-		tag_color=?, sync_days=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+		tag_color=?, sync_days=?, sync_max_messages=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
 		req.Name, req.Email, req.Provider, req.ImapHost, req.ImapPort, req.ImapTLS, req.ImapEncryption,
 		req.SmtpHost, req.SmtpPort, req.SmtpTLS, req.SmtpEncryption, req.Username,
 		req.SenderEmail, req.AvatarURL, req.AutoReplyEnabled, req.AutoReplySubject, req.AutoReplyBody,
-		req.ProxyEnabled, req.ProxyHost, req.ProxyPort, req.TagColor, req.SyncDays, id)
+		req.ProxyEnabled, req.ProxyHost, req.ProxyPort, req.TagColor, req.SyncDays, req.SyncMaxMessages, id)
 	if err != nil {
 		log.Printf("UpdateAccount error: %v", err)
 		respondError(w, http.StatusInternalServerError, "Failed to update account")

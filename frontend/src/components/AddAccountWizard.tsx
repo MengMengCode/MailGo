@@ -20,7 +20,15 @@ import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { showToast } from "@/stores/toast.store";
 import { useCreateAccount } from "@/hooks/mutations/useAccountMutations";
-import { accountsApi, apiFetch, syncApi, type DetectResponse, type ProbeResponse, type VerifyResponse } from "@/lib/api";
+import {
+  accountsApi,
+  apiFetch,
+  syncApi,
+  type DetectResponse,
+  type MicrosoftDeviceAuthorization,
+  type ProbeResponse,
+  type VerifyResponse,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/Avatar";
 
@@ -51,6 +59,7 @@ interface WizardState {
   pullAttachments: boolean;
   tag_color: string;
   sync_days: string;
+  sync_max_messages: string;
   avatar_url: string;
 }
 
@@ -71,6 +80,7 @@ const INITIAL_STATE: WizardState = {
   pullAttachments: false,
   tag_color: "",
   sync_days: "0",
+  sync_max_messages: "0",
   avatar_url: "",
 };
 
@@ -112,6 +122,11 @@ export function AddAccountWizard({
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResponse | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [microsoftDevice, setMicrosoftDevice] =
+    useState<MicrosoftDeviceAuthorization | null>(null);
+  const [microsoftAuthorizing, setMicrosoftAuthorizing] = useState(false);
+  const [microsoftAuthorized, setMicrosoftAuthorized] = useState(false);
+  const [microsoftError, setMicrosoftError] = useState<string | null>(null);
   /** When false, skip auto-detection and go straight to manual server entry. */
   const [smartDetect, setSmartDetect] = useState(true);
 
@@ -136,6 +151,54 @@ export function AddAccountWizard({
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stepIndex = STEP_ORDER.indexOf(step);
+  const emailDomain = state.email.split("@")[1]?.toLowerCase() || "";
+  const isMicrosoft =
+    detectResult?.auth_type === "microsoft_oauth" ||
+    ["outlook.com", "hotmail.com", "live.com", "msn.com"].includes(
+      emailDomain,
+    ) ||
+    state.imapHost.toLowerCase() === "outlook.office365.com" ||
+    state.smtpHost.toLowerCase() === "smtp-mail.outlook.com";
+  const microsoftOAuthConfigured =
+    detectResult?.oauth_configured ?? true;
+
+  useEffect(() => {
+    if (!microsoftDevice || microsoftAuthorized) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const result = await accountsApi.pollMicrosoftDeviceAuth(
+          microsoftDevice.flow_id,
+        );
+        if (cancelled) return;
+        if (result.status === "authorized") {
+          setMicrosoftAuthorized(true);
+          setMicrosoftAuthorizing(false);
+          setMicrosoftError(null);
+          setStep("finish");
+          return;
+        }
+        timer = setTimeout(
+          poll,
+          (result.interval || microsoftDevice.interval || 5) * 1000,
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setMicrosoftAuthorizing(false);
+        setMicrosoftError(
+          error instanceof Error
+            ? error.message
+            : t("settings.wizard.microsoftAuthorizationFailed"),
+        );
+      }
+    };
+    timer = setTimeout(poll, (microsoftDevice.interval || 5) * 1000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [microsoftAuthorized, microsoftDevice, t]);
 
   const reset = () => {
     setStep("email");
@@ -150,6 +213,10 @@ export function AddAccountWizard({
     setVerifying(false);
     setVerifyResult(null);
     setVerifyError(null);
+    setMicrosoftDevice(null);
+    setMicrosoftAuthorizing(false);
+    setMicrosoftAuthorized(false);
+    setMicrosoftError(null);
     setSmartDetect(true);
   };
 
@@ -311,12 +378,35 @@ export function AddAccountWizard({
     }
   };
 
+  const startMicrosoftAuthorization = async () => {
+    if (!microsoftOAuthConfigured) {
+      setMicrosoftError(
+        t("settings.wizard.microsoftNotConfigured"),
+      );
+      return;
+    }
+    setMicrosoftAuthorizing(true);
+    setMicrosoftError(null);
+    try {
+      const result = await accountsApi.startMicrosoftDeviceAuth(state.email);
+      setMicrosoftDevice(result);
+      window.open(result.verification_uri, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setMicrosoftAuthorizing(false);
+      setMicrosoftError(
+        error instanceof Error
+          ? error.message
+          : t("settings.wizard.microsoftAuthorizationFailed"),
+      );
+    }
+  };
+
   const createAccount = async () => {
     try {
       const created = await create.mutateAsync({
         name: state.senderName.trim() || defaultName(state.email),
         email: state.email,
-        provider: detectResult?.method || "imap",
+        provider: isMicrosoft ? "microsoft" : detectResult?.method || "imap",
         imap_host: state.imapHost,
         imap_port: state.imapPort,
         imap_tls: state.imapTLS,
@@ -327,9 +417,11 @@ export function AddAccountWizard({
         smtp_encryption: state.smtpEncryption,
         username: state.username,
         password: state.password,
+        oauth_flow_id: microsoftDevice?.flow_id,
         tag_color: state.tag_color,
         avatar_url: state.avatar_url,
         sync_days: parseInt(state.sync_days, 10) || 0,
+        sync_max_messages: parseInt(state.sync_max_messages, 10) || 0,
       });
 
       // Close the wizard immediately — the history pull runs in the
@@ -406,16 +498,33 @@ export function AddAccountWizard({
               </Button>
             )}
             {step === "password" && (
-              <Button
-                size="small"
-                loading={verifying}
-                onClick={verifyCredentials}
-                disabled={!state.password}
-              >
-                {verifying
-                  ? t("settings.wizard.verifying")
-                  : t("common.verify", "Verify")}
-              </Button>
+              isMicrosoft ? (
+                <Button
+                  size="small"
+                  loading={microsoftAuthorizing}
+                  onClick={startMicrosoftAuthorization}
+                  disabled={
+                    !microsoftOAuthConfigured ||
+                    microsoftAuthorizing ||
+                    microsoftAuthorized
+                  }
+                >
+                  {microsoftDevice
+                    ? t("settings.wizard.waitingMicrosoft")
+                    : t("settings.wizard.authorizeMicrosoft")}
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  loading={verifying}
+                  onClick={verifyCredentials}
+                  disabled={!state.password}
+                >
+                  {verifying
+                    ? t("settings.wizard.verifying")
+                    : t("common.verify", "Verify")}
+                </Button>
+              )
             )}
             {step === "finish" && (
               <Button size="small" loading={create.isPending} onClick={createAccount}>
@@ -633,23 +742,63 @@ export function AddAccountWizard({
             <ServerBox label="IMAP" host={state.imapHost} port={state.imapPort} encryption={state.imapEncryption} />
             <ServerBox label="SMTP" host={state.smtpHost} port={state.smtpPort} encryption={state.smtpEncryption} />
           </div>
-          <Input
-            label={t("settings.password")}
-            type="password"
-            value={state.password}
-            autoFocus
-            onChange={(e) => {
-              patch({ password: e.target.value });
-              setVerifyResult(null);
-              setVerifyError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && state.password) {
-                void verifyCredentials();
-              }
-            }}
-            hint={t("settings.wizard.passwordHint")}
-          />
+          {isMicrosoft ? (
+            <div className="space-y-3">
+              {!microsoftOAuthConfigured ? (
+                <Callout tone="error">
+                  {t("settings.wizard.microsoftNotConfigured")}
+                </Callout>
+              ) : microsoftDevice ? (
+                <>
+                  <div
+                    className="rounded-geist border p-4 text-center"
+                    style={{ borderColor: "var(--geist-border)" }}
+                  >
+                    <p className="text-label-12 text-secondary">
+                      {t("settings.wizard.microsoftCodeHint")}
+                    </p>
+                    <p className="text-heading-24 tracking-widest my-3">
+                      {microsoftDevice.user_code}
+                    </p>
+                    <a
+                      href={microsoftDevice.verification_uri}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-label-13 underline"
+                    >
+                      {microsoftDevice.verification_uri}
+                    </a>
+                  </div>
+                  <StatusLine icon={<Loader2 size={14} className="spinner" />}>
+                    {t("settings.wizard.waitingMicrosoft")}
+                  </StatusLine>
+                </>
+              ) : (
+                <Callout tone="warning">
+                  {t("settings.wizard.microsoftOAuthHint")}
+                </Callout>
+              )}
+              {microsoftError && <Callout tone="error">{microsoftError}</Callout>}
+            </div>
+          ) : (
+            <Input
+              label={t("settings.password")}
+              type="password"
+              value={state.password}
+              autoFocus
+              onChange={(e) => {
+                patch({ password: e.target.value });
+                setVerifyResult(null);
+                setVerifyError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && state.password) {
+                  void verifyCredentials();
+                }
+              }}
+              hint={t("settings.wizard.passwordHint")}
+            />
+          )}
           {verifying && (
             <StatusLine icon={<Loader2 size={14} className="spinner" />}>
               {t("settings.wizard.verifying")}
@@ -815,30 +964,52 @@ export function AddAccountWizard({
           </div>
           {/* Sync time range */}
           <div className="rounded-geist border p-4" style={{ borderColor: "var(--geist-border)" }}>
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-start gap-2.5">
-                <CalendarDays size={16} className="mt-0.5 shrink-0" style={{ color: "var(--geist-secondary)" }} />
-                <div>
-                  <p className="text-label-14 font-medium">{t("settings.syncPeriodDays")}</p>
-                  <p className="text-copy-13 text-secondary mt-0.5">
-                    {t("settings.syncPeriodDaysDesc")}
-                  </p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-start gap-2.5">
+                  <CalendarDays size={16} className="mt-0.5 shrink-0" style={{ color: "var(--geist-secondary)" }} />
+                  <div>
+                    <p className="text-label-14 font-medium">{t("settings.syncPeriodDays")}</p>
+                    <p className="text-copy-13 text-secondary mt-0.5">
+                      {t("settings.syncPeriodDaysDesc")}
+                    </p>
+                  </div>
+                </div>
+                <div className="inline-flex items-center gap-1.5">
+                  <Input
+                    className="w-[88px]"
+                    inputSize="small"
+                    type="number"
+                    min={0}
+                    value={state.sync_days}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "" || Number(v) < 0) return;
+                      patch({ sync_days: v });
+                    }}
+                  />
+                  <span className="text-label-12 text-secondary">{t("settings.days")}</span>
                 </div>
               </div>
-              <div className="inline-flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-label-14 font-medium">{t("settings.syncMaxMessages")}</p>
+                  <p className="text-copy-13 text-secondary mt-0.5">
+                    {t("settings.syncMaxMessagesHint")}
+                  </p>
+                </div>
                 <Input
-                  className="w-[88px]"
+                  className="w-[100px]"
                   inputSize="small"
                   type="number"
                   min={0}
-                  value={state.sync_days}
+                  value={state.sync_max_messages}
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "" || Number(v) < 0) return;
-                    patch({ sync_days: v });
+                    patch({ sync_max_messages: v });
                   }}
                 />
-                <span className="text-label-12 text-secondary">{t("settings.days")}</span>
               </div>
             </div>
           </div>

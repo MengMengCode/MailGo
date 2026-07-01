@@ -28,6 +28,8 @@ import {
 interface MessageListProps {
   messages: Message[];
   loading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   onSelectMessage: (id: number) => void;
   hasMore?: boolean;
   onLoadMore?: () => void;
@@ -56,6 +58,8 @@ interface MessageListItem {
 export function MessageList({
   messages,
   loading,
+  error,
+  onRetry,
   onSelectMessage,
   hasMore,
   onLoadMore,
@@ -214,6 +218,30 @@ export function MessageList({
   // position or see already-loaded items disappear.
   if (loading && messages.length === 0) {
     return <MessageListSkeleton />;
+  }
+
+  if (error && messages.length === 0) {
+    const message = error instanceof Error ? error.message : "";
+    return (
+      <EmptyState
+        icon={<Inbox size={22} />}
+        title={t("common.loadFailed")}
+        description={message || t("inbox.noMessagesHint")}
+        action={
+          onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-geist border px-3 text-label-13 transition-colors hover:bg-[var(--geist-gray-100)]"
+              style={{ borderColor: "var(--geist-border)" }}
+            >
+              <RotateCcw size={14} />
+              {t("common.tryAgain")}
+            </button>
+          ) : undefined
+        }
+      />
+    );
   }
 
   if (messages.length === 0) {

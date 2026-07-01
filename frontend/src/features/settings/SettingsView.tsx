@@ -55,7 +55,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { AddAccountWizard } from "@/components/AddAccountWizard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { useSyncStore } from "@/stores/sync.store";
-import { cn } from "@/lib/utils";
+import { cn, setAppTimeZone } from "@/lib/utils";
 import i18n, { LANG_KEY } from "@/lib/i18n";
 import { getKeyFingerprint, generateKeyPair } from "@/lib/pgp";
 import { useIsMobile } from "@/hooks/useBreakpoint";
@@ -70,6 +70,28 @@ const TABS: { id: Tab; labelKey: string; icon: typeof SettingsIcon }[] = [
   { id: "security", labelKey: "settings.security", icon: Shield },
   { id: "about", labelKey: "settings.about", icon: Info },
 ];
+
+const FALLBACK_TIMEZONES = [
+  "UTC",
+  "Asia/Shanghai",
+  "Asia/Hong_Kong",
+  "Asia/Tokyo",
+  "Asia/Singapore",
+  "Europe/London",
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+];
+
+function timezoneOptions() {
+  const intl = Intl as typeof Intl & {
+    supportedValuesOf?: (key: "timeZone") => string[];
+  };
+  const values = intl.supportedValuesOf?.("timeZone") || FALLBACK_TIMEZONES;
+  return Array.from(new Set(["UTC", "Asia/Shanghai", ...values])).sort();
+}
 
 export function SettingsView() {
   const { t } = useTranslation();
@@ -188,6 +210,7 @@ function GeneralSettings() {
   const qc = useQueryClient();
 
   const [form, setForm] = useState({
+    app_timezone: "UTC",
     auto_refresh_enabled: "true",
     check_interval: "300",
     notifications_enabled: "true",
@@ -202,6 +225,7 @@ function GeneralSettings() {
   useEffect(() => {
     const get = (k: string) => settings.find((s) => s.key === k)?.value || "";
     setForm({
+      app_timezone: get("app_timezone") || "UTC",
       auto_refresh_enabled: get("auto_refresh_enabled") || "true",
       check_interval: get("check_interval") || "300",
       notifications_enabled: get("notifications_enabled") || "true",
@@ -228,6 +252,7 @@ function GeneralSettings() {
       );
     },
     onSuccess: () => {
+      setAppTimeZone(form.app_timezone);
       qc.invalidateQueries({ queryKey: ["settings"] });
       showToast(t("settings.saved"), "success");
       setDirty(false);
@@ -255,6 +280,19 @@ function GeneralSettings() {
         >
           <option value="zh-CN">简体中文</option>
           <option value="en">English</option>
+        </Select>
+        <div className="divider" />
+        <Select
+          label={t("settings.timezone")}
+          value={form.app_timezone}
+          onChange={(e) => patch("app_timezone", e.target.value)}
+          hint={t("settings.timezoneHint")}
+        >
+          {timezoneOptions().map((zone) => (
+            <option key={zone} value={zone}>
+              {zone}
+            </option>
+          ))}
         </Select>
         <div className="divider" />
         <AutoRefreshSettings form={form} patch={patch} />
@@ -842,6 +880,7 @@ function AccountsSettings() {
   const del = useDeleteAccount();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
+  const [showMicrosoftConfig, setShowMicrosoftConfig] = useState(false);
   const syncLock = useSyncStore((s) => s.syncLock);
   const backendSyncing = useSyncStore((s) => s.backendSyncing);
   const syncingAccountIds = useSyncStore((s) => s.syncingAccountIds);
@@ -876,15 +915,25 @@ function AccountsSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-heading-20">{t("settings.emailAccounts")}</h2>
-        <Button
-          size="small"
-          leadingIcon={<Plus size={14} />}
-          onClick={() => setShowAdd(true)}
-        >
-          {t("settings.addAccount")}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="secondary"
+            size="small"
+            leadingIcon={<LockKeyhole size={14} />}
+            onClick={() => setShowMicrosoftConfig(true)}
+          >
+            {t("settings.microsoftOAuthConfig")}
+          </Button>
+          <Button
+            size="small"
+            leadingIcon={<Plus size={14} />}
+            onClick={() => setShowAdd(true)}
+          >
+            {t("settings.addAccount")}
+          </Button>
+        </div>
       </div>
       {isLoading ? (
         <p className="text-label-13 text-secondary">{t("settings.loadInProgress")}</p>
@@ -938,7 +987,125 @@ function AccountsSettings() {
       )}
 
       <AddAccountWizard open={showAdd} onClose={() => setShowAdd(false)} />
+      <MicrosoftOAuthSettingsModal
+        open={showMicrosoftConfig}
+        onClose={() => setShowMicrosoftConfig(false)}
+      />
     </div>
+  );
+}
+
+function MicrosoftOAuthSettingsModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const { data: settings = [] } = useSettingsQuery();
+  const qc = useQueryClient();
+  const configuredClientId =
+    settings.find((item) => item.key === "microsoft_client_id")?.value || "";
+  const secretConfigured =
+    settings.find((item) => item.key === "microsoft_client_secret")?.value ===
+    "__configured__";
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setClientId(configuredClientId);
+    setClientSecret("");
+  }, [configuredClientId, open]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      await settingsApi.update("microsoft_client_id", clientId.trim());
+      if (clientSecret) {
+        await settingsApi.update(
+          "microsoft_client_secret",
+          clientSecret.trim(),
+        );
+      }
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["settings"] });
+      showToast(t("settings.microsoftOAuthSaved"), "success");
+      onClose();
+    },
+    onError: (error) =>
+      showToast(
+        error instanceof Error
+          ? error.message
+          : t("settings.microsoftOAuthSaveFailed"),
+        "error",
+      ),
+  });
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={t("settings.microsoftOAuthConfig")}
+      description={t("settings.microsoftOAuthHint")}
+      footer={
+        <>
+          <Button variant="secondary" size="small" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            size="small"
+            loading={save.isPending}
+            disabled={
+              !clientId.trim() ||
+              (!secretConfigured && !clientSecret.trim())
+            }
+            onClick={() => save.mutate()}
+          >
+            {t("common.save")}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Input
+          label="MICROSOFT_CLIENT_ID"
+          value={clientId}
+          onChange={(event) => setClientId(event.target.value)}
+          placeholder="00000000-0000-0000-0000-000000000000"
+        />
+        <Input
+          label="MICROSOFT_CLIENT_SECRET"
+          type="password"
+          value={clientSecret}
+          onChange={(event) => setClientSecret(event.target.value)}
+          placeholder={
+            secretConfigured ? t("settings.microsoftSecretConfigured") : ""
+          }
+          hint={t("settings.microsoftSecretHint")}
+        />
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-label-12 text-secondary">
+            {t("settings.microsoftOAuthStatus")}
+          </span>
+          <span
+            className="text-label-12 font-medium"
+            style={{
+              color:
+                configuredClientId && secretConfigured
+                  ? "var(--geist-green-500)"
+                  : "var(--geist-secondary)",
+            }}
+          >
+            {configuredClientId && secretConfigured
+              ? t("settings.microsoftConfigured")
+              : t("settings.microsoftNotConfigured")}
+          </span>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -964,6 +1131,7 @@ function AccountSettingsItem({
     avatar_url: account.avatar_url || "",
     tag_color: account.tag_color || "",
     sync_days: account.sync_days ?? 0,
+    sync_max_messages: account.sync_max_messages ?? 0,
   });
 
   const save = () => {
@@ -986,6 +1154,7 @@ function AccountSettingsItem({
         avatar_url: form.avatar_url,
         tag_color: form.tag_color,
         sync_days: form.sync_days,
+        sync_max_messages: form.sync_max_messages,
       },
     });
     setEditOpen(false);
@@ -1236,6 +1405,26 @@ function AccountSettingsItem({
                 setForm((f) => ({ ...f, sync_days: v }));
               }}
               placeholder={t("settings.syncDaysPlaceholder")}
+              className="input-small w-full max-w-[200px]"
+            />
+          </div>
+          <div>
+            <label className="text-label-14 font-medium mb-1 block">
+              {t("settings.syncMaxMessages")}
+            </label>
+            <p className="text-copy-13 text-secondary mb-1.5">
+              {t("settings.syncMaxMessagesHint")}
+            </p>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={form.sync_max_messages}
+              onChange={(e) => {
+                const v = Math.max(0, Math.min(100000, Number(e.target.value) || 0));
+                setForm((f) => ({ ...f, sync_max_messages: v }));
+              }}
+              placeholder={t("settings.syncMaxMessagesPlaceholder")}
               className="input-small w-full max-w-[200px]"
             />
           </div>

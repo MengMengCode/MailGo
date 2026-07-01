@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
@@ -9,9 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"mailgo/internal/appclock"
 	"mailgo/internal/crypto"
 	"mailgo/internal/database"
 	"mailgo/internal/imap"
+	"mailgo/internal/microsoftauth"
 	"mailgo/internal/models"
 	"mime"
 	"mime/quotedprintable"
@@ -99,11 +102,11 @@ func ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if afterFilter != "" {
 		where += " AND m.received_at >= ?"
-		args = append(args, afterFilter)
+		args = append(args, dateFilterBoundary(afterFilter, false))
 	}
 	if beforeFilter != "" {
 		where += " AND m.received_at <= ?"
-		args = append(args, beforeFilter+" 23:59:59")
+		args = append(args, dateFilterBoundary(beforeFilter, true))
 	}
 	if excludeSpamTrash {
 		where += " AND f.role NOT IN ('spam', 'trash')"
@@ -211,6 +214,21 @@ func countDistinctMessages(where string, args []interface{}, label string) int {
 		log.Printf("ListMessages %s count error: %v", label, err)
 	}
 	return total
+}
+
+func dateFilterBoundary(value string, endOfDay bool) time.Time {
+	loc := appclock.CurrentLocation()
+	parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(value), loc)
+	if err != nil {
+		if fallback, fallbackErr := time.Parse(time.RFC3339, strings.TrimSpace(value)); fallbackErr == nil {
+			return fallback
+		}
+		return time.Now().In(loc)
+	}
+	if endOfDay {
+		return parsed.AddDate(0, 0, 1).Add(-time.Nanosecond)
+	}
+	return parsed
 }
 
 func GetMessage(w http.ResponseWriter, r *http.Request) {
@@ -1032,20 +1050,30 @@ type smtpAccount struct {
 	Encryption string // "ssl", "starttls", "none"
 	Username   string
 	Password   string
+	OAuthToken string
 }
 
 func deliverSMTP(accountID int64, msg outboundMessage) error {
 	var account smtpAccount
+	var provider string
 	err := database.DB.QueryRow(
-		`SELECT smtp_host, smtp_port, smtp_tls, COALESCE(smtp_encryption, ''), username, COALESCE(password_encrypted, '')
+		`SELECT smtp_host, smtp_port, smtp_tls, COALESCE(smtp_encryption, ''), username,
+		 COALESCE(password_encrypted, ''), COALESCE(provider, '')
 		 FROM accounts WHERE id = ?`,
 		accountID,
-	).Scan(&account.Host, &account.Port, &account.UseTLS, &account.Encryption, &account.Username, &account.Password)
+	).Scan(&account.Host, &account.Port, &account.UseTLS, &account.Encryption, &account.Username, &account.Password, &provider)
 	if err != nil {
 		return fmt.Errorf("account lookup failed: %w", err)
 	}
 	if dec, decErr := crypto.Decrypt(account.Password); decErr == nil {
 		account.Password = dec
+	}
+	if provider == "microsoft" {
+		token, tokenErr := microsoftauth.AccessTokenForAccount(context.Background(), accountID)
+		if tokenErr != nil {
+			return fmt.Errorf("Microsoft OAuth token: %w", tokenErr)
+		}
+		account.OAuthToken = token
 	}
 	if account.Host == "" || account.Username == "" {
 		return fmt.Errorf("SMTP account is not configured")
@@ -1151,7 +1179,9 @@ func sendSMTP(account smtpAccount, from string, recipients []string, data []byte
 	// always upgrade to TLS (implicit on 465, STARTTLS on 587/25) the
 	// connection is encrypted before auth happens.
 	var auth smtp.Auth
-	if account.Password != "" {
+	if account.OAuthToken != "" {
+		auth = microsoftauth.NewSMTPAuth(account.Username, account.OAuthToken)
+	} else if account.Password != "" {
 		auth = smtp.PlainAuth("", account.Username, account.Password, account.Host)
 	}
 
@@ -1182,6 +1212,9 @@ func sendSMTP(account smtpAccount, from string, recipients []string, data []byte
 		// smtp.PlainAuth refuses to send passwords over plaintext, so we
 		// only use auth when the password is empty (local relay).
 		var plainAuth smtp.Auth
+		if account.OAuthToken != "" {
+			return fmt.Errorf("Microsoft XOAUTH2 requires TLS")
+		}
 		if account.Password != "" {
 			plainAuth = smtp.PlainAuth("", account.Username, account.Password, account.Host)
 		}

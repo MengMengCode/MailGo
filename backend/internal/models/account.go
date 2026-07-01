@@ -30,6 +30,7 @@ type Account struct {
 	IsDefault        bool         `json:"is_default"`
 	TagColor         string       `json:"tag_color"`
 	SyncDays         int          `json:"sync_days"`
+	SyncMaxMessages  int          `json:"sync_max_messages"`
 	LastSyncAt       sql.NullTime `json:"last_sync_at"`
 	CreatedAt        time.Time    `json:"created_at"`
 	UpdatedAt        time.Time    `json:"updated_at"`
@@ -59,4 +60,6 @@ type AccountCreateRequest struct {
 	ProxyPort        int    `json:"proxy_port"`
 	TagColor         string `json:"tag_color"`
 	SyncDays         int    `json:"sync_days"`
+	SyncMaxMessages  int    `json:"sync_max_messages"`
+	OAuthFlowID      string `json:"oauth_flow_id"`
 }

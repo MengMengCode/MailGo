@@ -185,6 +185,8 @@ export function MailFolderView({
     data: infiniteData,
     isLoading,
     isFetching,
+    error: messagesError,
+    refetch: refetchMessages,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
@@ -422,7 +424,9 @@ export function MailFolderView({
         <div className="flex-1 min-h-0">
           <MessageList
             messages={activeThreadId ? threadMessages : messages}
-            loading={isLoadingData || isFetchingData}
+            loading={isLoadingData}
+            error={messages.length === 0 ? messagesError : null}
+            onRetry={() => void refetchMessages()}
             onSelectMessage={(id) => {
               if (id >= LOCAL_DRAFT_ID_BASE) {
                 setSelectedLocalDraftId(id - LOCAL_DRAFT_ID_BASE);

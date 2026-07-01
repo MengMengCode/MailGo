@@ -1,54 +1,78 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+export const TIMEZONE_KEY = "mailgo-timezone";
+
 /** Combine class names with tailwind-merge for safe overrides. */
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
+}
+
+export function getAppTimeZone(): string | undefined {
+  try {
+    const value = localStorage.getItem(TIMEZONE_KEY);
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function setAppTimeZone(value: string): void {
+  try {
+    if (value) localStorage.setItem(TIMEZONE_KEY, value);
+    else localStorage.removeItem(TIMEZONE_KEY);
+    window.dispatchEvent(new CustomEvent("mailgo:timezone-change"));
+  } catch {
+    /* ignore */
+  }
+}
+
+function dateParts(date: Date, timeZone?: string) {
+  const parts = new Intl.DateTimeFormat(undefined, {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(date);
+  const get = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value || 0);
+  return { year: get("year"), month: get("month"), day: get("day") };
 }
 
 /** Format a date string as a relative short label. */
 export function formatDate(dateStr: string | number | Date): string {
   const d = new Date(dateStr);
   const now = new Date();
-  const sameYear = d.getFullYear() === now.getFullYear();
+  const timeZone = getAppTimeZone();
+  const current = dateParts(now, timeZone);
+  const target = dateParts(d, timeZone);
+  const sameYear = target.year === current.year;
   const isToday =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
+    target.year === current.year &&
+    target.month === current.month &&
+    target.day === current.day;
 
   if (isToday) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone });
   }
 
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
   if (sameYear) {
-    return `${months[d.getMonth()]} ${d.getDate()}`;
+    return d.toLocaleDateString([], { month: "short", day: "numeric", timeZone });
   }
-  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric", timeZone });
 }
 
 /** Format a date with full date + time. */
 export function formatDateTime(dateStr: string | number | Date): string {
   const d = new Date(dateStr);
+  const timeZone = getAppTimeZone();
   return d.toLocaleString([], {
     year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
 }
 

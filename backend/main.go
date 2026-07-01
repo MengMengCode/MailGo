@@ -84,7 +84,7 @@ func main() {
 	}
 
 	// ── Database ──
-	if err := database.Initialize(); err != nil {
+	if err := waitForDatabase(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer database.Close()
@@ -100,9 +100,8 @@ func main() {
 	webPassword := loadOrGenerateWebPassword()
 
 	// ── Redis ──
-	_ = database.InitializeRedis()
-	if database.RDB == nil {
-		log.Fatal("Redis is required for login protection; check REDIS_* settings")
+	if err := waitForRedis(); err != nil {
+		log.Fatalf("Redis is required for login protection: %v", err)
 	}
 	database.SyncProgressResetStale()
 
@@ -124,6 +123,7 @@ func main() {
 
 	// Login is the only public API. Every other API route, including health
 	// checks and static resources served through the API, requires a token.
+	r.HandleFunc("/healthz", handlers.HealthCheck).Methods("GET")
 	r.HandleFunc("/api/v1/auth/login", tokenAuth.Login).Methods("POST", "OPTIONS")
 
 	// API routes
@@ -148,6 +148,8 @@ func main() {
 	api.HandleFunc("/accounts/detect", handlers.DetectAccount).Methods("POST")
 	api.HandleFunc("/accounts/probe", handlers.ProbeAccount).Methods("POST")
 	api.HandleFunc("/accounts/verify", handlers.VerifyAccount).Methods("POST")
+	api.HandleFunc("/accounts/microsoft/device/start", handlers.StartMicrosoftDeviceAuthorization).Methods("POST")
+	api.HandleFunc("/accounts/microsoft/device/poll", handlers.PollMicrosoftDeviceAuthorization).Methods("POST")
 	api.HandleFunc("/accounts/{id}", handlers.GetAccount).Methods("GET")
 	api.HandleFunc("/accounts/{id}", handlers.UpdateAccount).Methods("PUT")
 	api.HandleFunc("/accounts/{id}", handlers.DeleteAccount).Methods("DELETE")
@@ -238,6 +240,49 @@ func serveFrontend(r *mux.Router) {
 		}
 		handler.ServeHTTP(w, r)
 	}))
+}
+
+func waitForDatabase() error {
+	return retryStartup("database", 120*time.Second, func() error {
+		return database.Initialize()
+	})
+}
+
+func waitForRedis() error {
+	return retryStartup("redis", 60*time.Second, func() error {
+		if err := database.InitializeRedis(); err != nil {
+			return err
+		}
+		if database.RDB == nil {
+			return fmt.Errorf("redis connection unavailable")
+		}
+		return nil
+	})
+}
+
+func retryStartup(name string, timeout time.Duration, fn func() error) error {
+	deadline := time.Now().Add(timeout)
+	delay := time.Second
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		if err := fn(); err != nil {
+			lastErr = err
+			if time.Now().Add(delay).After(deadline) {
+				break
+			}
+			log.Printf("[init] waiting for %s (attempt %d): %v", name, attempt, err)
+			time.Sleep(delay)
+			if delay < 5*time.Second {
+				delay *= 2
+			}
+			continue
+		}
+		if attempt > 1 {
+			log.Printf("[init] %s connected after %d attempt(s)", name, attempt)
+		}
+		return nil
+	}
+	return fmt.Errorf("%s did not become ready within %s: %w", name, timeout, lastErr)
 }
 
 // startBackgroundSync runs a goroutine that periodically pulls new mail

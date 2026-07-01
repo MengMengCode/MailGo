@@ -34,7 +34,7 @@ import { useSettingsQuery } from "@/hooks/queries/useSettings";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { useUrlSync } from "@/hooks/useUrlSync";
 import { useIsMobile, useIsMobileOrTablet } from "@/hooks/useBreakpoint";
-import { cn } from "@/lib/utils";
+import { cn, setAppTimeZone } from "@/lib/utils";
 import { Loader2, RefreshCw, AlertTriangle, WifiOff, Menu, Inbox, Search, Bot, Settings as SettingsIcon, PenSquare } from "lucide-react";
 
 initThemeFromStorage();
@@ -115,6 +115,14 @@ export default function Layout() {
         localStorage.setItem("mailgo-language", backendLang);
       }
     }
+  }, [settings]);
+
+  // Sync timezone from backend. Date rendering helpers read this value so
+  // existing timestamps are displayed consistently without rewriting them.
+  useEffect(() => {
+    if (!settings) return;
+    const timezone = settings.find((s) => s.key === "app_timezone")?.value;
+    if (timezone) setAppTimeZone(timezone);
   }, [settings]);
 
   // Re-apply appearance when theme changes (sidebar bg depends on light/dark).

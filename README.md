@@ -29,6 +29,7 @@ A modern, self-hosted email client with a clean web interface. Connect your IMAP
 
 一个现代化的自托管 Web 邮件客户端，支持多账户 IMAP/SMTP，统一管理所有邮件。
 
+![alt text](/image/0.png)
 ## Installation / 安装
 
 ### Docker (Recommended / 推荐)
@@ -107,6 +108,12 @@ All configuration is via environment variables in `.env`:
 | `MYSQL_PASSWORD` | MySQL password / MySQL 密码 | — |
 | `MYSQL_DATABASE` | MySQL database / MySQL 数据库 | `mailgo` |
 | `MYSQL_ROOT_PASSWORD` | MySQL root password / MySQL root 密码 | — |
+| `MYSQL_INNODB_BUFFER_POOL_SIZE` | MySQL InnoDB buffer pool size / MySQL InnoDB 缓冲池大小 | `256M` |
+| `MYSQL_INNODB_LOG_FILE_SIZE` | MySQL InnoDB redo log file size / MySQL InnoDB redo 日志大小 | `128M` |
+| `MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT` | MySQL flush policy; `2` is faster for small self-hosted servers / MySQL 刷盘策略，`2` 更适合小型自托管 | `2` |
+| `MYSQL_MAX_CONNECTIONS` | MySQL server max connections / MySQL 服务端最大连接数 | `50` |
+| `MYSQL_MAX_OPEN_CONNS` | MailGo database connection pool max open connections / MailGo 数据库连接池最大打开连接数 | `10` |
+| `MYSQL_MAX_IDLE_CONNS` | MailGo database connection pool max idle connections / MailGo 数据库连接池最大空闲连接数 | `5` |
 | `REDIS_HOST` | Redis host / Redis 主机 | `redis` |
 | `REDIS_PORT` | Redis port / Redis 端口 | `6379` |
 
@@ -125,6 +132,38 @@ docker exec mailgo /app/mailgo -reset-password && docker restart mailgo
 # Settings > Security > Change Password
 # 设置 > 安全 > 修改密码
 ```
+
+## Microsoft Outlook OAuth2
+
+Outlook.com, Hotmail, Live, and Microsoft 365 accounts use Microsoft OAuth2
+instead of mailbox passwords. Configure the integration under
+**Settings > Accounts > Microsoft OAuth** before adding a Microsoft account.
+
+Outlook.com、Hotmail、Live 和 Microsoft 365 邮箱使用 Microsoft OAuth2，
+不能直接使用邮箱密码。添加微软邮箱前，请先在
+**设置 > 账户 > Microsoft OAuth** 中完成配置。
+
+Create an app registration in Microsoft Entra:
+
+1. Select **Accounts in any organizational directory and personal Microsoft
+   accounts** as the supported account type.
+2. Under **Authentication > Advanced settings**, enable
+   **Allow public client flows**. Device Code Flow is a public-client flow and
+   does not transmit the client secret.
+3. Add delegated Office 365 Exchange Online permissions:
+   `IMAP.AccessAsUser.All` and `SMTP.Send`.
+4. Create a client secret and copy its **Value** (not its Secret ID).
+5. Save the Application (client) ID and secret value in MailGo as
+   `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`.
+
+MailGo requires both fields to be configured before it allows a detected
+Microsoft mailbox to be added. The secret is encrypted at rest and never sent
+back to the browser by the settings API. The Device Code protocol itself uses
+only the Client ID.
+
+When adding the account, MailGo displays a Microsoft device code, verifies
+IMAP and SMTP using XOAUTH2 after authorization, encrypts the access and
+refresh tokens, and refreshes expired access tokens automatically.
 
 ## Docker Compose
 
@@ -210,6 +249,19 @@ for example `TRUSTED_PROXIES=172.18.0.0/16`.
 │   (data)   │  (cache)   │  (mail servers)│
 └────────────┴────────────┴────────────────┘
 ```
+
+## Preview / 预览
+
+![alt text](/image/1.png)
+![alt text](/image/2.png)
+![alt text](/image/3.png)
+![alt text](/image/4.png)
+![alt text](/image/5.png)
+![alt text](/image/6.png)
+![alt text](/image/7.png)
+![alt text](/image/8.png)
+
+
 
 ## License / 开源许可
 

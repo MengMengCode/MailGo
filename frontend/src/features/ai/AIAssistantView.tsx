@@ -94,13 +94,14 @@ export function AIAssistantView() {
   }, [settings]);
 
   const activeSession = sessions.find((s) => s.id === activeId) ?? sessions[0];
+  const displayTitle = useCallback(
+    (title: string) => (isDefaultChatTitle(title) ? t("ai.newChat") : title),
+    [t],
+  );
+  const activeTitle = displayTitle(activeSession?.title ?? "");
 
-  // Only the welcome message → show the landing screen
-  const showLanding =
-    activeSession &&
-    activeSession.messages.length === 1 &&
-    activeSession.messages[0].role === "assistant" &&
-    activeSession.messages[0].content === WELCOME_MESSAGE;
+  // Empty sessions and old one-empty-assistant placeholders show the landing screen.
+  const showLanding = isLandingSession(activeSession, WELCOME_MESSAGE);
 
   /* ---- Persistence ---- */
   useEffect(() => {
@@ -137,7 +138,7 @@ export function AIAssistantView() {
   };
 
   const createSession = () => {
-    const session = createEmptySession(t("ai.newChat"));
+    const session = createEmptySession();
     setSessions((prev) => [session, ...prev]);
     setActiveId(session.id);
     setInput("");
@@ -147,11 +148,11 @@ export function AIAssistantView() {
     setSessions((prev) => {
       const next = prev.filter((s) => s.id !== id);
       if (id === activeId) {
-        const fallback = next[0] ?? createEmptySession(t("ai.newChat"));
+        const fallback = next[0] ?? createEmptySession();
         setActiveId(fallback.id);
         return next.length ? next : [fallback];
       }
-      return next.length ? next : [createEmptySession(t("ai.newChat"))];
+      return next.length ? next : [createEmptySession()];
     });
   };
 
@@ -159,8 +160,8 @@ export function AIAssistantView() {
     updateSession(sessionId, (s) => ({
       ...s,
       title:
-        s.title === t("ai.newChat") && message.role === "user"
-          ? titleFromPrompt(message.content, t("ai.newChat"))
+        isDefaultChatTitle(s.title) && message.role === "user"
+          ? titleFromPrompt(message.content)
           : s.title,
       updatedAt: Date.now(),
       messages: [...s.messages, message],
@@ -204,11 +205,8 @@ export function AIAssistantView() {
     }
     const sessionId = activeSession.id;
     const shouldGenerateTitle =
-      activeSession.title === t("ai.newChat") &&
-      activeSession.messages.every(
-        (message) =>
-          message.role === "assistant" && message.content === WELCOME_MESSAGE,
-      );
+      isDefaultChatTitle(activeSession.title) &&
+      isLandingSession(activeSession, WELCOME_MESSAGE);
 
     // Capture current selection before clearing
     const emailIds = [...selectedIds];
@@ -529,7 +527,7 @@ export function AIAssistantView() {
               )}
             >
               <MessageSquare size={14} className="shrink-0 opacity-60" />
-              <span className="truncate">{session.title}</span>
+              <span className="truncate">{displayTitle(session.title)}</span>
             </button>
             <button
               onClick={() => void deleteSession(session.id)}
@@ -601,7 +599,7 @@ export function AIAssistantView() {
             >
               <Bot size={13} />
             </div>
-            <span className="text-[13px] font-semibold truncate">{activeSession.title}</span>
+            <span className="text-[13px] font-semibold truncate">{activeTitle}</span>
           </div>
           <span className="text-[11px] text-[var(--geist-secondary)] ml-auto tracking-wide uppercase">
             MailGo Agent
@@ -998,10 +996,10 @@ function createEmptySession(title?: string): ChatSession {
   const now = Date.now();
   return {
     id: makeID(),
-    title: title || i18n.t("ai.newChat"),
+    title: title && !isDefaultChatTitle(title) ? title : "",
     createdAt: now,
     updatedAt: now,
-    messages: [createMessage("assistant", "")],
+    messages: [],
   };
 }
 
@@ -1019,10 +1017,55 @@ function loadSessions() {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [createEmptySession()];
     const parsed = JSON.parse(raw) as ChatSession[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [createEmptySession()];
+    return Array.isArray(parsed) && parsed.length > 0
+      ? parsed.map(normalizeSession)
+      : [createEmptySession()];
   } catch {
     return [createEmptySession()];
   }
+}
+
+function normalizeSession(session: ChatSession): ChatSession {
+  return {
+    ...session,
+    title: isDefaultChatTitle(session.title) ? "" : session.title,
+    messages: isLandingMessages(session.messages) ? [] : session.messages,
+  };
+}
+
+function isLandingSession(session: ChatSession | undefined, welcomeMessage: string) {
+  if (!session) return false;
+  return isLandingMessages(session.messages, welcomeMessage);
+}
+
+function isLandingMessages(messages: ChatMessage[] = [], welcomeMessage?: string) {
+  if (messages.length === 0) return true;
+  return (
+    messages.length === 1 &&
+    messages[0].role === "assistant" &&
+    isWelcomeMessage(messages[0].content, welcomeMessage)
+  );
+}
+
+function isWelcomeMessage(content: string, currentWelcomeMessage?: string) {
+  const normalized = content.trim();
+  return (
+    !normalized ||
+    normalized === currentWelcomeMessage ||
+    normalized === i18n.t("ai.systemPrompt", { lng: "en" }) ||
+    normalized === i18n.t("ai.systemPrompt", { lng: "zh-CN" })
+  );
+}
+
+function isDefaultChatTitle(title?: string) {
+  const normalized = title?.trim() ?? "";
+  return (
+    !normalized ||
+    normalized === i18n.t("ai.newChat", { lng: "en" }) ||
+    normalized === i18n.t("ai.newChat", { lng: "zh-CN" }) ||
+    normalized === "New chat" ||
+    normalized === "新对话"
+  );
 }
 
 function makeID() {

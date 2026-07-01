@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"mailgo/internal/microsoftauth"
 	"net"
 	"strings"
 	"time"
@@ -14,14 +15,16 @@ import (
 
 // AccountConfig holds the IMAP connection parameters for one account.
 type AccountConfig struct {
-	ID         int64
-	Host       string
-	Port       int
-	TLS        bool   // legacy boolean (true for ssl/starttls, false for none)
-	Encryption string // "ssl", "starttls", or "none"
-	Username   string
-	Password   string
-	SyncDays   int // 0 = sync all, >0 = only sync last N days
+	ID              int64
+	Host            string
+	Port            int
+	TLS             bool   // legacy boolean (true for ssl/starttls, false for none)
+	Encryption      string // "ssl", "starttls", or "none"
+	Username        string
+	Password        string
+	OAuthToken      string
+	SyncDays        int // 0 = sync all, >0 = only sync last N days
+	SyncMaxMessages int // 0 = unlimited, >0 = cap initial history backfill
 }
 
 // ServerMailbox keeps the server mailbox name together with the IMAP
@@ -117,13 +120,30 @@ func Connect(cfg AccountConfig) (*client.Client, error) {
 	// messages can easily exceed 30s, so we use a generous timeout.
 	c.Timeout = 3 * time.Minute
 
-	if err := c.Login(cfg.Username, cfg.Password); err != nil {
+	if cfg.OAuthToken != "" {
+		if err := c.Authenticate(microsoftauth.NewXOAuth2Client(cfg.Username, cfg.OAuthToken)); err != nil {
+			c.Logout()
+			c.Close()
+			return nil, fmt.Errorf("imap XOAUTH2 login %s: %w", cfg.Username, explainXOAuth2LoginError(err))
+		}
+	} else if err := c.Login(cfg.Username, cfg.Password); err != nil {
 		c.Logout()
 		c.Close()
 		return nil, fmt.Errorf("imap login %s: %w", cfg.Username, err)
 	}
 
 	return c, nil
+}
+
+func explainXOAuth2LoginError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "user is authenticated but not connected") {
+		return fmt.Errorf("%w (Microsoft accepted the OAuth token, but Outlook/Exchange refused the mailbox connection. Check that IMAP is enabled for this mailbox, the account has an active mailbox, and the app has delegated Office 365 Exchange Online IMAP.AccessAsUser.All permission; then reconnect the account)", err)
+	}
+	return err
 }
 
 // FetchMailboxes returns the list of mailbox names available on the server.
