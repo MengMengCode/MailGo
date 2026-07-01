@@ -1,4 +1,19 @@
-import * as openpgp from "openpgp";
+type OpenPGP = typeof import("openpgp");
+
+let openPGPPromise: Promise<OpenPGP> | undefined;
+
+async function loadOpenPGP(): Promise<OpenPGP> {
+  // WebCrypto is intentionally unavailable on public HTTP origins. Keep
+  // OpenPGP out of the startup bundle so the rest of MailGo still works when
+  // accessed directly through http://IP:port.
+  if (!globalThis.crypto?.subtle) {
+    throw new Error(
+      "PGP encryption requires HTTPS (or localhost) because WebCrypto is unavailable on this HTTP origin.",
+    );
+  }
+  openPGPPromise ??= import("openpgp");
+  return openPGPPromise;
+}
 
 /**
  * Generate a new RSA-4096 PGP key pair.
@@ -8,6 +23,7 @@ export async function generateKeyPair(
   name: string,
   email: string,
 ): Promise<{ publicKey: string; privateKey: string }> {
+  const openpgp = await loadOpenPGP();
   const key = await openpgp.generateKey({
     type: "rsa",
     rsaBits: 4096,
@@ -28,6 +44,7 @@ export async function encryptMessage(
   plaintext: string,
   publicKeyArmored: string,
 ): Promise<string> {
+  const openpgp = await loadOpenPGP();
   const publicKey = await openpgp.readKey({ armoredKey: publicKeyArmored });
   const message = await openpgp.createMessage({ text: plaintext });
   const encrypted = await openpgp.encrypt({
@@ -47,6 +64,7 @@ export async function tryDecrypt(
   passphrase?: string,
 ): Promise<string | null> {
   try {
+    const openpgp = await loadOpenPGP();
     const privateKey = await openpgp.readPrivateKey({
       armoredKey: privateKeyArmored,
     });
@@ -89,6 +107,7 @@ export async function getKeyFingerprint(
   publicKeyArmored: string,
 ): Promise<string | null> {
   try {
+    const openpgp = await loadOpenPGP();
     const key = await openpgp.readKey({ armoredKey: publicKeyArmored });
     return key.getFingerprint().toUpperCase();
   } catch {
