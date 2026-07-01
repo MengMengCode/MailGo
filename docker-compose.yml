@@ -1,6 +1,6 @@
 services:
   mailgo:
-    image: ghcr.io/mengmengcode/mailgo:main
+    image: ghcr.io/mengmengcode/mailgo:${MAILGO_IMAGE_TAG:-latest}
     container_name: mailgo
     restart: unless-stopped
     ports:

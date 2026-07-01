@@ -46,6 +46,68 @@ Default install directory: `~/mailgo`. Override with `MAILGO_DIR=/path/to/dir`.
 
 默认安装目录：`~/mailgo`。可通过 `MAILGO_DIR=/path/to/dir` 自定义。
 
+### Binary Release / 二进制 Release 部署
+
+Use this when you want to run MailGo itself as a normal Linux binary instead
+of a Docker container. The binary already embeds the frontend, but it still
+requires MySQL 8.0 and Redis 7.
+
+如果你不想把 MailGo 主程序跑在 Docker 里，可以下载 Release 二进制文件直接运行。
+二进制文件已经内嵌前端页面，但仍然需要 MySQL 8.0 和 Redis 7。
+
+```bash
+# Pick one:
+# Linux x86_64 / amd64
+curl -L -o mailgo.tar.gz https://github.com/MengMengCode/MailGo/releases/latest/download/mailgo-linux-amd64.tar.gz
+
+# Linux ARM64 / aarch64
+curl -L -o mailgo.tar.gz https://github.com/MengMengCode/MailGo/releases/latest/download/mailgo-linux-arm64.tar.gz
+
+mkdir -p mailgo
+tar -xzf mailgo.tar.gz -C mailgo --strip-components=1
+cd mailgo
+
+cp .env.example .env
+openssl rand -hex 32
+```
+
+Edit `.env` and set at least:
+
+编辑 `.env`，至少设置这些项：
+
+```env
+ENCRYPTION_KEY=PASTE_THE_64_HEX_CHARS_FROM_OPENSSL_HERE
+SERVER_PORT=8080
+
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=mailgo
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=mailgo
+
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+```
+
+Then start MailGo:
+
+然后启动 MailGo：
+
+```bash
+chmod +x ./mailgo
+./mailgo
+```
+
+Open `http://SERVER_IP:8080`. The initial password is printed in stdout. To
+reset it later:
+
+打开 `http://服务器IP:8080`。首次登录密码会打印在控制台。之后如需重置：
+
+```bash
+./mailgo -reset-password
+# Restart the running MailGo process after reset.
+```
+
 ### Manual / 手动部署
 
 Requirements / 环境要求: Go 1.24+, Node.js 20+, MySQL 8.0+, Redis 7+
@@ -191,6 +253,51 @@ To build from source (for development), use `docker-compose.dev.yml`:
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build
+```
+
+## Release / 版本发布
+
+MailGo uses git tags as the release source of truth. When you push a tag like
+`v0.2.1`, GitHub Actions publishes Docker images to GHCR and uploads Linux
+binary release assets.
+
+MailGo 使用 git tag 作为发布版本来源。推送 `v0.2.1` 这样的 tag 后，GitHub
+Actions 会发布 GHCR Docker 镜像，并上传 Linux 二进制 Release 包。
+
+```powershell
+# Patch: 0.2.0 -> 0.2.1
+.\push-release.ps1
+
+# Minor: 0.2.0 -> 0.3.0
+.\push-release.ps1 -Level minor
+
+# Exact version
+.\push-release.ps1 -Version 0.3.0
+
+# Only create local commit and tag, do not push
+.\push-release.ps1 -Version 0.3.0 -NoPush
+```
+
+The release script updates `VERSION`, `frontend/package.json`,
+`frontend/package-lock.json`, and `frontend/src/lib/version.ts`, then commits,
+tags, and pushes. GHCR will show version tags such as:
+
+发布脚本会同步更新 `VERSION`、`frontend/package.json`、`frontend/package-lock.json`
+和 `frontend/src/lib/version.ts`，然后提交、打 tag、推送。GHCR Packages 会显示这些版本 tag：
+
+```text
+ghcr.io/mengmengcode/mailgo:v0.2.1
+ghcr.io/mengmengcode/mailgo:0.2.1
+ghcr.io/mengmengcode/mailgo:0.2
+ghcr.io/mengmengcode/mailgo:latest
+```
+
+To pin Docker Compose to a specific release, set this in `.env`:
+
+如果 Docker Compose 想固定到某个版本，在 `.env` 里设置：
+
+```env
+MAILGO_IMAGE_TAG=0.2.1
 ```
 
 ## Direct IP and reverse proxy / 公网 IP 与反向代理

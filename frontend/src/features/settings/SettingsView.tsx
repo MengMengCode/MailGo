@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Sun,
@@ -31,6 +31,7 @@ import {
   Image as ImageIcon,
   Check,
   Code2,
+  Github,
   LockKeyhole,
 } from "lucide-react";
 import { useSettingsQuery } from "@/hooks/queries/useSettings";
@@ -59,6 +60,7 @@ import { cn, setAppTimeZone } from "@/lib/utils";
 import i18n, { LANG_KEY } from "@/lib/i18n";
 import { getKeyFingerprint, generateKeyPair } from "@/lib/pgp";
 import { useIsMobile } from "@/hooks/useBreakpoint";
+import { APP_VERSION, REPOSITORY_NAME, REPOSITORY_URL } from "@/lib/version";
 
 type Tab = "general" | "accounts" | "appearance" | "ai" | "security" | "about";
 
@@ -2408,21 +2410,36 @@ function AddPGPKeyModal({
 /* ============================== About ============================== */
 function AboutSettings() {
   const { t } = useTranslation();
-  const rows: [string, string][] = [
-    [t("settings.application"), "MailGo"],
-    [t("settings.version"), "0.2.0"],
-    [t("settings.backend"), "Go + SQLite (WAL)"],
-    [t("settings.frontend"), "React 19 + TypeScript + TailwindCSS"],
-    [t("settings.license"), "Apache-2.0"],
+  const rows: { label: string; value: ReactNode }[] = [
+    { label: t("settings.application"), value: "MailGo" },
+    {
+      label: "GitHub",
+      value: (
+        <a
+          href={REPOSITORY_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 hover:underline"
+          style={{ color: "var(--geist-primary)" }}
+        >
+          <Github size={15} />
+          <span>{REPOSITORY_NAME}</span>
+        </a>
+      ),
+    },
+    { label: t("settings.version"), value: APP_VERSION },
+    { label: t("settings.backend"), value: "Go + MySQL + Redis" },
+    { label: t("settings.frontend"), value: "React 19 + TypeScript + TailwindCSS" },
+    { label: t("settings.license"), value: "Apache-2.0" },
   ];
   return (
     <div className="space-y-6">
       <h2 className="text-heading-20">{t("settings.about")}</h2>
       <div className="card-padded space-y-3">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between">
-            <span className="text-label-14 text-secondary">{k}</span>
-            <span className="text-label-14 font-medium">{v}</span>
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-4">
+            <span className="text-label-14 text-secondary">{row.label}</span>
+            <div className="text-label-14 font-medium text-right">{row.value}</div>
           </div>
         ))}
       </div>

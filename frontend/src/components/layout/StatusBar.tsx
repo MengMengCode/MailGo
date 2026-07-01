@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useSyncStore } from "@/stores/sync.store";
+import { APP_VERSION } from "@/lib/version";
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -58,7 +59,7 @@ export function StatusBar() {
             {t("status.online")}
           </span>
         )}
-        <span>MailGo v0.2.0</span>
+        <span>MailGo v{APP_VERSION}</span>
       </div>
     </footer>
   );
