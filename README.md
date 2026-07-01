@@ -117,8 +117,9 @@ All configuration is via environment variables in `.env`:
 # 首次安装 — 自动生成并打印到控制台
 docker logs mailgo | grep Password
 
-# Reset password / 重置密码
-docker exec mailgo /app/mailgo -reset-password
+# Reset password and restart MailGo to apply it
+# 重置密码并重启 MailGo 使新密码生效
+docker exec mailgo /app/mailgo -reset-password && docker restart mailgo
 
 # Change password (logged in) / 修改密码（已登录状态）
 # Settings > Security > Change Password
