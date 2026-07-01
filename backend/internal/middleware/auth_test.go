@@ -151,3 +151,29 @@ func TestTokenAuthRateLimitsFailures(t *testing.T) {
 		t.Fatalf("same /24 status = %d", recorder.Code)
 	}
 }
+
+func TestProxyHeadersAreOnlyUsedFromTrustedProxies(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "172.18.0.0/16")
+
+	direct := httptest.NewRequest(http.MethodGet, "http://132.226.217.197:8080/", nil)
+	direct.RemoteAddr = "203.0.113.9:54321"
+	direct.Header.Set("X-Forwarded-For", "198.51.100.20")
+	direct.Header.Set("X-Forwarded-Proto", "https")
+	if got := clientIP(direct); got != "203.0.113.9" {
+		t.Fatalf("direct client IP = %q, want remote address", got)
+	}
+	if requestIsSecure(direct) {
+		t.Fatal("untrusted direct request must not become secure from a forwarded header")
+	}
+
+	proxied := httptest.NewRequest(http.MethodGet, "http://mail.example/", nil)
+	proxied.RemoteAddr = "172.18.0.5:43210"
+	proxied.Header.Set("X-Forwarded-For", "198.51.100.20, 172.18.0.4")
+	proxied.Header.Set("X-Forwarded-Proto", "https")
+	if got := clientIP(proxied); got != "198.51.100.20" {
+		t.Fatalf("proxied client IP = %q, want forwarded client", got)
+	}
+	if !requestIsSecure(proxied) {
+		t.Fatal("trusted HTTPS proxy request should be secure")
+	}
+}

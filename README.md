@@ -100,6 +100,7 @@ All configuration is via environment variables in `.env`:
 |---|---|---|
 | `ENCRYPTION_KEY` | AES-256 key for encrypting passwords at rest / 静态加密密钥 | Auto-generated / 自动生成 |
 | `SERVER_PORT` | HTTP listen port / HTTP 监听端口 | `8080` |
+| `TRUSTED_PROXIES` | Additional trusted reverse proxy IPs/CIDRs, comma-separated / 额外可信反代 IP 或 CIDR | Loopback only / 仅回环地址 |
 | `MYSQL_HOST` | MySQL host / MySQL 主机 | `mysql` |
 | `MYSQL_PORT` | MySQL port / MySQL 端口 | `3306` |
 | `MYSQL_USER` | MySQL user / MySQL 用户 | `mailgo` |
@@ -152,6 +153,36 @@ To build from source (for development), use `docker-compose.dev.yml`:
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
+## Direct IP and reverse proxy / 公网 IP 与反向代理
+
+A domain is not required. Direct access works at
+`http://PUBLIC_IP:8080`. The frontend uses same-origin relative API paths, so
+the same build also works behind Nginx or Caddy.
+
+不强制绑定域名，可直接访问 `http://公网IP:8080`。前端 API 使用同源相对路径，
+因此同一个构建也可用于 Nginx 或 Caddy 反代。
+
+Example same-host Nginx configuration (works with an IP or a domain):
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Loopback proxies are trusted automatically. If the reverse proxy connects
+from another container or machine, set `TRUSTED_PROXIES` to its IP or CIDR,
+for example `TRUSTED_PROXIES=172.18.0.0/16`.
+
 ## Technology Stack / 技术栈
 
 - Backend: Go 1.24, gorilla/mux, go-imap, go-message, AES-256-GCM, go-redis
@@ -182,4 +213,3 @@ docker compose -f docker-compose.dev.yml up -d --build
 ## License / 开源许可
 
 [Apache License 2.0](LICENSE)
-

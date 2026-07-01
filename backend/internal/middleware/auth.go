@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -256,16 +257,78 @@ func (a *TokenAuth) removeExpiredSessionsLocked(now time.Time) {
 }
 
 func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		return host
+	remote := parseRemoteIP(r.RemoteAddr)
+	if remote == nil {
+		return r.RemoteAddr
 	}
-	return r.RemoteAddr
+	if !isTrustedProxy(remote) {
+		return remote.String()
+	}
+
+	// Walk from the application towards the browser. The first address that
+	// is not a trusted proxy is the client address used by the login limiter.
+	ips := forwardedIPs(r)
+	for i := len(ips) - 1; i >= 0; i-- {
+		if !isTrustedProxy(ips[i]) {
+			return ips[i].String()
+		}
+	}
+	if realIP := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); realIP != nil {
+		return realIP.String()
+	}
+	return remote.String()
 }
 
 func requestIsSecure(r *http.Request) bool {
-	return r.TLS != nil ||
-		strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	if r.TLS != nil {
+		return true
+	}
+	remote := parseRemoteIP(r.RemoteAddr)
+	if remote == nil || !isTrustedProxy(remote) {
+		return false
+	}
+	proto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	return strings.EqualFold(proto, "https")
+}
+
+func parseRemoteIP(remoteAddr string) net.IP {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return net.ParseIP(host)
+	}
+	return net.ParseIP(remoteAddr)
+}
+
+func forwardedIPs(r *http.Request) []net.IP {
+	values := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	ips := make([]net.IP, 0, len(values))
+	for _, value := range values {
+		if ip := net.ParseIP(strings.TrimSpace(value)); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
+
+// Same-host Nginx/Caddy is trusted automatically. Additional proxy addresses
+// (such as a Docker network or load balancer subnet) must be explicitly set.
+func isTrustedProxy(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, value := range strings.Split(os.Getenv("TRUSTED_PROXIES"), ",") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if candidate := net.ParseIP(value); candidate != nil && candidate.Equal(ip) {
+			return true
+		}
+		if _, network, err := net.ParseCIDR(value); err == nil && network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func isUnsafeMethod(method string) bool {
